@@ -31,11 +31,15 @@ const DailyBriefWidget = () => {
       </CardHeader>
       <CardContent>
         {isLoading && <p>Loading...</p>}
-        {error && <p className="text-rose-500">Could not load brief.</p>}
+        {error && <p className="text-rose-500">Sorry, the brief couldn't be loaded. Please try again.</p>}
         {data && <p>{data.message}</p>}
       </CardContent>
       <CardFooter>
-        <Button className="w-full" onClick={() => refetch()}>
+        <Button
+          className="w-full"
+          onClick={() => refetch()}
+          aria-label="Regenerate daily brief"
+        >
           Regenerate
         </Button>
       </CardFooter>

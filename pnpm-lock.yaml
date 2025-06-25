@@ -18,7 +18,7 @@ importers:
         specifier: ^9.29.0
         version: 9.29.0
       husky:
-        specifier: ^9.1.7
+        specifier: '9'
         version: 9.1.7
       jq:
         specifier: ^1.7.2

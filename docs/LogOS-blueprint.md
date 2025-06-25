@@ -10,7 +10,7 @@
 ## 2   Primary User Persona
 | Trait | Description |
 |-------|-------------|
-| Name  | **Sam** (our reference persona) |
+| Name  | **Luke** (our reference persona) |
 | Age   | 50+ |
 | Background | Tech‑savvy "vibe coder" who juggles multiple projects, battles ADHD, and values rapid feedback |
 | Pain Points | Overwhelm, missed deadlines, scattered data |
@@ -237,7 +237,7 @@ BMAD (Breakthrough Method for Agile AI‑Driven Development) provides modular 
 
 ---
 
-## 10   Immediate Next Steps for Sam
+## 10   Immediate Next Steps for Luke
 1. **Review & tweak** this blueprint – mark any must‑have / nice‑to‑have features.
 2. **Pick backend** (Supabase vs. custom Fastify) for the MVP.
 3. **Run `npx bmad-method install`** inside your project root.
@@ -245,28 +245,3 @@ BMAD (Breakthrough Method for Agile AI‑Driven Development) provides modular 
 5. **Schedule a 30‑min focus session** to stub the first React components.
 
 > *Remember: tiny, rewarding steps keep the dopamine flowing. Let’s vibe‑code this thing!*
-
-
----
-
-## 11   Appendix A — Budget Cheat‑Sheet (Solo Dev)
-| Cost Bucket | Bootstrap (early dev) | Active Dev / MVP Pilot | Notes |
-|-------------|----------------------|------------------------|-------|
-| **Supabase** | **Free** (0.5 GB DB, 500 MB storage, 2 M edge calls) | **US $25 ≈ AU $38** for 8 GB DB, 8 M edge calls | Supabase pricing, Jun 2025 |
-| **OpenAI LLMs**<br>(GPT‑4o + 4o‑mini) | ~0.4 M in / 0.1 M out tokens → **US $3** | ~2 M in / 0.6 M out → **US $15** | GPT‑4o $2.50 / M in, $10 / M out; 4o‑mini $0.50 / M in, $2 / M out |
-| **Anthropic Claude Sonnet** | 0.1 M in / 0.02 M out → **US $0.6** | 0.5 M in / 0.1 M out → **US $3** | $3 / M in, $15 / M out |
-| **Embeddings** (`text-embedding-3-small`) | 2 M tokens → **US $0.04** | 10 M tokens → **US $0.20** | $0.02 / M tokens |
-| **Whisper STT** | 300 min audio → **US $1.80** | 1 000 min → **US $6.00** | $0.006 / min |
-| **PostHog (analytics)** | Under 1 M events → **Free** | 3 M events → **US $15** | PostHog pricing cap |
-| **Domain name + email** | **AU $1** | **AU $1** | Annual ≈ $12 |
-| **Optional Vultr VPS** | **US $6** (1 vCPU, 1 GB) | **US $24** (4 vCPU, 8 GB) | Only if self‑hosting Ollama/OCR |
-| **Twilio Voice / SMS** (optional) | **US $2–5** | **US $10–15** | AU call rates: $0.013‑0.022/min |
-| **Telnyx Voice / SMS** (alt) | **US $1–4** | **US $8–12** | ~20‑30 % cheaper; AU inbound ~$0.010/min, SMS ~$0.045 |
-| **Plivo Voice / SMS** (alt) | **US $1.5–4.5** | **US $9–13** | Similar to Telnyx; AU inbound ~$0.012/min, SMS ~$0.046 |
-
-**Monthly Totals (USD)**
-- **Bootstrap:** ≈ **$5–7** core → **$13–18** with VPS + Twilio.  
-- **Active Dev / MVP Pilot:** ≈ **$60–65** core → **$90–105** with VPS + Twilio.
-
-> *Tip:* Set `DAILY_TOKEN_CAP` env var (default **AU $5/day**) and let `token_budget.ts` auto‑switch to cheaper models if spend exceeds budget.
-

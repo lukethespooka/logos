@@ -40,6 +40,7 @@ The architecture is a modern, serverless-first web application stack designed fo
 - **File/folder pattern**: Each React feature in `/features/<name>/`, mirrored by Supabase functions in `/functions/<feature>/index.ts`.
 
 ### Core UI/UX Patterns
+- **Design System & Principles:** All UI/UX development must adhere to the standards defined in the [**LogOS UX-Core-Prompt.md**](./UX-Core-Prompt.md).
 - **⌘K Master Command Palette:** A Spotlight-style overlay for navigation, quick actions, and agent commands. This is the primary interaction model.
 - **Context Ribbon:** A slim, auto-hiding bar that provides real-time "Next Best Actions" to the user, driven by AI suggestions.
 

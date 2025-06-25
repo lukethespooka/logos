@@ -1,20 +1,11 @@
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import PrioritizedInboxWidget from "./features/dashboard/PrioritizedInboxWidget";
 
 export default function App() {
-  const [message, setMessage] = useState("Loading…");
-
-  useEffect(() => {
-    fetch("/functions/v1/briefbot-hello")
-      .then((r) => r.json())
-      .then((data) => setMessage(data.message))
-      .catch(() => setMessage("Failed to reach API"));
-  }, []);
-
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4">
-      <h1 className="text-3xl font-bold text-blue-600">{message}</h1>
-      <Button variant="outline">System Health: OK</Button>
+    <div className="flex h-screen items-center justify-center bg-gray-50 p-4">
+      <div className="grid grid-cols-1 gap-6">
+        <PrioritizedInboxWidget />
+      </div>
     </div>
   );
 } 

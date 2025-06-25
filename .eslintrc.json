@@ -1,0 +1,7 @@
+{
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "rules": { "max-lines": ["error", 250] },
+  "overrides": [
+    { "files": ["**/*.config.*", "**/*.stories.*", "**/__fixtures__/**"], "rules": { "max-lines": "off" } }
+  ]
+}

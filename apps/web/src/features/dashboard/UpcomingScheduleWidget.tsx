@@ -2,6 +2,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -10,11 +11,16 @@ import { mockEvents } from "./mocks";
 import { AlertTriangle } from "lucide-react";
 
 const UpcomingScheduleWidget = () => {
+  const eventCount = mockEvents.length;
+  const conflictCount = mockEvents.filter((e) => e.isConflict).length;
+
   return (
     <Card className="w-[360px]">
       <CardHeader>
         <CardTitle>Upcoming Schedule</CardTitle>
-        <CardDescription>Your day at a glance.</CardDescription>
+        <CardDescription>
+          You have {eventCount} events today. {conflictCount > 0 && `${conflictCount} has a conflict.`}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <ul className="space-y-4">
@@ -33,7 +39,11 @@ const UpcomingScheduleWidget = () => {
         </ul>
       </CardContent>
       <CardFooter>
-        <Button variant="outline" className="w-full">
+        <Button
+          variant="outline"
+          className="w-full"
+          aria-label="View full calendar details"
+        >
           View Full Calendar
         </Button>
       </CardFooter>

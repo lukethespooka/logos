@@ -7,10 +7,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { mockTasks } from "./mocks";
+import { mockTasks, Urgency } from "./mocks";
 
 const SmartTaskOverviewWidget = () => {
-  const urgencyColors = {
+  const urgencyColors: Record<Urgency, string> = {
     High: "bg-red-500",
     Medium: "bg-yellow-500",
     Low: "bg-green-500",
@@ -38,7 +38,7 @@ const SmartTaskOverviewWidget = () => {
               </div>
               <Badge
                 className={`${
-                  urgencyColors[task.urgency as keyof typeof urgencyColors]
+                  urgencyColors[task.urgency]
                 } text-white`}
               >
                 {task.urgency}

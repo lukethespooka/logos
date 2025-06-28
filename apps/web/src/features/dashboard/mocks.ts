@@ -25,7 +25,14 @@ export const mockInboxClusters = [
   { id: 3, name: "Marketing", unread: 8 },
 ];
 
-export const mockTasks = [
+export type Urgency = "High" | "Medium" | "Low";
+
+export const mockTasks: {
+  id: number;
+  title: string;
+  completed: boolean;
+  urgency: Urgency;
+}[] = [
   { id: 1, title: "Draft proposal for Q3 budget", completed: false, urgency: "High" },
   { id: 2, title: "Follow up with the design team", completed: false, urgency: "Medium" },
   { id: 3, title: "Book flight for conference", completed: true, urgency: "Low" },

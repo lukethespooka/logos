@@ -10,12 +10,16 @@ import {
 } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 
+interface BriefData {
+  message: string;
+}
+
 const DailyBriefWidget = () => {
   const {
     data: brief,
     error,
     isLoading,
-  } = useQuery({
+  } = useQuery<BriefData, Error>({
     queryKey: ["dailyBrief"],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke(

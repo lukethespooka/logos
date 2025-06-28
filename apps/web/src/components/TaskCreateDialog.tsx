@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,20 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
   const [urgency, setUrgency] = useState<"High" | "Medium" | "Low">("Medium");
   const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Handle escape key to close dialog
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        onOpenChange(false);
+      }
+    };
+
+    if (open) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [open, onOpenChange]);
 
   const urgencyOptions: Array<{ value: "High" | "Medium" | "Low"; label: string; icon: string }> = [
     { value: "High", label: "High Priority", icon: "🔥" },

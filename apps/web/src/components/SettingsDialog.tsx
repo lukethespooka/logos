@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cog, LogOut, Sun, Moon, Monitor } from 'lucide-react';
+import { Cog, LogOut, Sun, Moon, Monitor, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -103,11 +103,12 @@ export function SettingsDialog() {
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="timer">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="timer">Timer</TabsTrigger>
             <TabsTrigger value="notifications">Notify</TabsTrigger>
             <TabsTrigger value="appearance">Theme</TabsTrigger>
             <TabsTrigger value="sound">Sound</TabsTrigger>
+            <TabsTrigger value="shortcuts">Keys</TabsTrigger>
             <TabsTrigger value="account">Account</TabsTrigger>
           </TabsList>
           <TabsContent value="timer" className="space-y-4">
@@ -388,6 +389,67 @@ export function SettingsDialog() {
                       }))
                     }
                   />
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="shortcuts" className="space-y-4">
+            <div className="grid gap-4 py-4">
+              <div>
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <Keyboard className="h-4 w-4" />
+                  Keyboard Shortcuts
+                </Label>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Use these shortcuts to navigate and control LogOS quickly
+                </p>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">Quick Task Creation</p>
+                      <p className="text-xs text-muted-foreground">Create a new task instantly</p>
+                    </div>
+                    <kbd className="flex items-center gap-1 px-2 py-1 bg-background border rounded text-xs font-mono">
+                      ⌘K
+                    </kbd>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">Return to Dashboard</p>
+                      <p className="text-xs text-muted-foreground">Navigate back to main dashboard</p>
+                    </div>
+                    <kbd className="flex items-center gap-1 px-2 py-1 bg-background border rounded text-xs font-mono">
+                      ⌘H
+                    </kbd>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">Close Dialog</p>
+                      <p className="text-xs text-muted-foreground">Close any open dialog or modal</p>
+                    </div>
+                    <kbd className="flex items-center gap-1 px-2 py-1 bg-background border rounded text-xs font-mono">
+                      ESC
+                    </kbd>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">Focus Mode Toggle</p>
+                      <p className="text-xs text-muted-foreground">Enter or exit focus mode</p>
+                    </div>
+                    <kbd className="flex items-center gap-1 px-2 py-1 bg-background border rounded text-xs font-mono">
+                      ⌘F
+                    </kbd>
+                  </div>
+                </div>
+                
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <strong>Note:</strong> On Windows and Linux, use Ctrl instead of ⌘ (Command key)
+                  </p>
                 </div>
               </div>
             </div>

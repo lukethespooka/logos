@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarDays, Tag, Edit3, Trash2, AlertTriangle } from "lucide-react";
+import { CalendarDays, Tag, Edit3, Trash2, AlertTriangle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SubtaskCreateDialog } from "@/components/SubtaskCreateDialog";
 
 interface Task {
   id: string;
@@ -15,6 +16,9 @@ interface Task {
   completed_at: string | null;
   due_date?: string | null;
   sort_order?: number;
+  parent_task_id?: string | null;
+  level: number;
+  subtasks?: Task[];
 }
 
 interface TaskEditDialogProps {
@@ -28,6 +32,11 @@ interface TaskEditDialogProps {
     due_date?: string;
   }) => Promise<void>;
   onTaskDelete: (taskId: string) => Promise<void>;
+  onSubtaskCreate?: (subtaskData: {
+    title: string;
+    description: string;
+    parent_task_id: string;
+  }) => Promise<void>;
 }
 
 export function TaskEditDialog({ 
@@ -35,7 +44,8 @@ export function TaskEditDialog({
   onOpenChange, 
   task, 
   onTaskUpdate, 
-  onTaskDelete 
+  onTaskDelete,
+  onSubtaskCreate 
 }: TaskEditDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -44,6 +54,7 @@ export function TaskEditDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showSubtaskDialog, setShowSubtaskDialog] = useState(false);
 
   const urgencyOptions: Array<{ value: "High" | "Medium" | "Low"; label: string; icon: string }> = [
     { value: "High", label: "High Priority", icon: "🔥" },
@@ -97,6 +108,12 @@ export function TaskEditDialog({
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleAddSubtask = () => {
+    if (task && task.level === 0) {
+      setShowSubtaskDialog(true);
     }
   };
 
@@ -240,6 +257,21 @@ export function TaskEditDialog({
               >
                 Cancel
               </Button>
+              
+              {/* Add Subtask Button - only for parent tasks */}
+              {task && task.level === 0 && onSubtaskCreate && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleAddSubtask}
+                  className="px-3"
+                  disabled={isSubmitting}
+                  title="Add subtask"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
+              
               <Button
                 type="button"
                 variant="destructive"
@@ -294,6 +326,21 @@ export function TaskEditDialog({
           </div>
         )}
       </DialogContent>
+      
+      {/* Subtask Creation Dialog */}
+      {task && (
+        <SubtaskCreateDialog
+          open={showSubtaskDialog}
+          onOpenChange={setShowSubtaskDialog}
+          parentTask={{ id: task.id, title: task.title }}
+          onSubtaskCreate={async (subtaskData) => {
+            if (onSubtaskCreate) {
+              await onSubtaskCreate(subtaskData);
+              setShowSubtaskDialog(false);
+            }
+          }}
+        />
+      )}
     </Dialog>
   );
 } 

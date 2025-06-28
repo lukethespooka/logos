@@ -13,6 +13,9 @@ import { SettingsDialog } from "@/components/SettingsDialog";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ToastContainer } from "./components/ui/toast";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { Home, Layout } from "lucide-react";
+import { Breadcrumb } from "./components/ui/breadcrumb";
+import { QuickNavDock } from "./components/QuickNavDock";
 
 const queryClient = new QueryClient();
 
@@ -20,7 +23,24 @@ function Dashboard() {
   const { user, signIn } = useAuth();
   const { isFocused, toggleFocus } = useFocusContext();
   const [isLoading, setIsLoading] = useState(false);
+  const [currentView, setCurrentView] = useState<'dashboard' | 'tasks' | 'schedule'>('dashboard');
   const taskWidgetRef = useRef<{ openCreateDialog: () => void } | null>(null);
+
+  // Return to dashboard function
+  const returnToDashboard = useCallback(() => {
+    const wasNotOnDashboard = currentView !== 'dashboard';
+    setCurrentView('dashboard');
+    
+    // Show helpful feedback only if we weren't already on dashboard
+    if (wasNotOnDashboard) {
+      (window as any).showToast?.({
+        type: 'success',
+        title: '🏠 Welcome Home',
+        description: 'Returned to main dashboard',
+        duration: 1500
+      });
+    }
+  }, [currentView]);
 
   const handleSignIn = async () => {
     try {
@@ -33,7 +53,7 @@ function Dashboard() {
     }
   };
 
-  // Keyboard shortcut for quick task creation
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + K to create task
@@ -51,13 +71,19 @@ function Dashboard() {
           });
         }
       }
+      
+      // Ctrl/Cmd + H to return to dashboard
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault();
+        returnToDashboard();
+      }
     };
 
     if (user) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [user]);
+  }, [user, returnToDashboard]);
 
   if (!user) {
     return (
@@ -81,7 +107,17 @@ function Dashboard() {
       <div className="container mx-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">Welcome, {user.email}</h1>
+            <button
+              onClick={returnToDashboard}
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity group"
+              title="Return to Dashboard (⌘H)"
+            >
+              <Layout className="h-6 w-6 text-primary group-hover:scale-110 transition-transform" />
+              <div className="text-left">
+                <h1 className="text-xl font-bold">LogOS Dashboard</h1>
+                <p className="text-sm text-muted-foreground">Welcome, {user.email}</p>
+              </div>
+            </button>
             <Button 
               variant="outline" 
               size="sm"
@@ -92,35 +128,66 @@ function Dashboard() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-md">
-              <kbd className="font-mono bg-background px-1 rounded text-[10px]">⌘K</kbd>
-              <span>Quick Add</span>
-            </div>
+            {/* Quick Actions */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={returnToDashboard}
+              className="hidden sm:flex items-center gap-2"
+              title="Return to Dashboard (⌘H)"
+            >
+              <Home className="h-4 w-4" />
+              <span>Home</span>
+            </Button>
+            
             <SettingsDialog />
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-1 lg:col-span-2">
-            <FocusWrapper widgetId="tasks">
-              <SmartTaskOverviewWidget ref={taskWidgetRef} />
-            </FocusWrapper>
-          </div>
-          <div className="sm:col-span-2 lg:col-span-2">
+        
+        {/* Breadcrumb Navigation */}
+        <div className="mb-6">
+          <Breadcrumb
+            items={[
+              {
+                label: "Dashboard",
+                onClick: returnToDashboard,
+                current: currentView === 'dashboard'
+              }
+            ]}
+          />
+        </div>
+        
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Left Column */}
+          <div className="space-y-4">
             <FocusWrapper widgetId="daily-brief">
               <DailyBriefWidget />
             </FocusWrapper>
-          </div>
-          <div className="sm:col-span-1 lg:col-span-2">
             <FocusWrapper widgetId="inbox">
               <PrioritizedInboxWidget />
             </FocusWrapper>
           </div>
-          <div className="sm:col-span-1 lg:col-span-2">
+          
+          {/* Right Column */}
+          <div className="space-y-4">
+            <FocusWrapper widgetId="tasks">
+              <SmartTaskOverviewWidget ref={taskWidgetRef} />
+            </FocusWrapper>
             <FocusWrapper widgetId="schedule">
               <UpcomingScheduleWidget />
             </FocusWrapper>
           </div>
         </div>
+        
+        {/* Quick Navigation Dock */}
+        <QuickNavDock
+          onHomeClick={returnToDashboard}
+          onQuickAddClick={() => {
+            if (taskWidgetRef.current?.openCreateDialog) {
+              taskWidgetRef.current.openCreateDialog();
+            }
+          }}
+        />
       </div>
       <ToastContainer />
     </div>

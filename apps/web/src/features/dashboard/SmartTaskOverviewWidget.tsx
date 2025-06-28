@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import React, { useState, useRef, useEffect, useImperativeHandle, useMemo, useCallback } from "react";
 import { soundManager } from "@/lib/sounds";
 import { createConfettiEffect, createSparkleEffect, addGlowEffect, animations } from "@/lib/animations";
-import { GripVertical, Sparkles, Plus, Calendar, Edit3 } from "lucide-react";
+import { GripVertical, Sparkles, Plus, Calendar, Edit3, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TaskCreateDialog } from "@/components/TaskCreateDialog";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
@@ -22,6 +22,9 @@ interface Task {
   completed_at: string | null;
   due_date?: string | null;
   sort_order?: number;
+  parent_task_id?: string | null;
+  level: number;
+  subtasks?: Task[];
 }
 
 export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () => void }>((props, ref) => {
@@ -34,6 +37,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<TaskFilters>({
     search: "",
     urgency: [],
@@ -99,24 +103,85 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     },
   });
 
-  // Update tasks state when data changes
+  // Update tasks state when data changes and organize hierarchically
   useEffect(() => {
     if (tasksData) {
-      setTasks(tasksData);
+      // Organize tasks hierarchically
+      const organizedTasks = organizeTasksHierarchically(tasksData);
+      setTasks(organizedTasks);
+      
+      // Only auto-expand on very first load (when no expand state exists)
+      const tasksWithSubtasks = organizedTasks
+        .filter(task => task.subtasks && task.subtasks.length > 0)
+        .map(task => task.id);
+      
+      // Check if this is the first load (no expanded tasks yet)
+      if (tasksWithSubtasks.length > 0 && expandedTasks.size === 0) {
+        const newExpandedTasks = new Set<string>();
+        // Only auto-expand first 3 tasks to avoid overwhelming UI
+        tasksWithSubtasks.slice(0, 3).forEach(taskId => newExpandedTasks.add(taskId));
+        setExpandedTasks(newExpandedTasks);
+      }
     }
-  }, [tasksData]);
+  }, [tasksData]); // Note: removed expandedTasks from deps to avoid infinite loop
 
-  // Filter and search tasks
+  // Function to organize tasks into parent-child hierarchy
+  const organizeTasksHierarchically = (allTasks: Task[]): Task[] => {
+    // First, create a map for quick lookup
+    const taskMap = new Map<string, Task>();
+    allTasks.forEach(task => {
+      taskMap.set(task.id, { ...task, subtasks: [] });
+    });
+
+    // Then, organize into hierarchy
+    const rootTasks: Task[] = [];
+    
+    allTasks.forEach(task => {
+      const taskWithSubtasks = taskMap.get(task.id)!;
+      
+      if (task.parent_task_id && taskMap.has(task.parent_task_id)) {
+        // This is a subtask, add it to its parent
+        const parent = taskMap.get(task.parent_task_id)!;
+        parent.subtasks!.push(taskWithSubtasks);
+      } else {
+        // This is a root task
+        rootTasks.push(taskWithSubtasks);
+      }
+    });
+
+    // Sort subtasks within each parent
+    rootTasks.forEach(task => {
+      if (task.subtasks && task.subtasks.length > 0) {
+        task.subtasks.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      }
+    });
+
+    return rootTasks;
+  };
+
+  // Filter and search tasks (including subtasks)
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
 
     return tasks.filter(task => {
-      // Search filter
+      // Search filter - check parent and subtasks
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
         const titleMatch = task.title.toLowerCase().includes(searchLower);
         const descMatch = task.description?.toLowerCase().includes(searchLower);
-        if (!titleMatch && !descMatch) return false;
+        
+        // Also search in subtasks
+        const subtaskMatch = task.subtasks?.some(subtask => 
+          subtask.title.toLowerCase().includes(searchLower) ||
+          subtask.description?.toLowerCase().includes(searchLower)
+        );
+        
+        if (!titleMatch && !descMatch && !subtaskMatch) return false;
+        
+        // Auto-expand if subtask matches
+        if (subtaskMatch && !titleMatch && !descMatch) {
+          setExpandedTasks(prev => new Set(prev).add(task.id));
+        }
       }
 
       // Urgency filter
@@ -146,22 +211,33 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     });
   }, [tasks, filters]);
 
-  // Calculate task counts for filter UI
+  // Calculate task counts for filter UI (including subtasks)
   const taskCounts = useMemo(() => {
     if (!tasks) return undefined;
 
-    const completed = tasks.filter(t => !!t.completed_at).length;
-    const overdue = tasks.filter(t => 
+    // Flatten all tasks including subtasks for accurate counts
+    const allTasks: Task[] = [];
+    tasks.forEach(task => {
+      allTasks.push(task);
+      if (task.subtasks) {
+        allTasks.push(...task.subtasks);
+      }
+    });
+
+    const completed = allTasks.filter(t => !!t.completed_at).length;
+    const overdue = allTasks.filter(t => 
       t.due_date && !t.completed_at && new Date(t.due_date) < new Date()
     ).length;
 
     return {
-      total: tasks.length,
+      total: allTasks.length,
       completed,
-      high: tasks.filter(t => t.urgency === "High").length,
-      medium: tasks.filter(t => t.urgency === "Medium").length,
-      low: tasks.filter(t => t.urgency === "Low").length,
-      overdue
+      high: allTasks.filter(t => t.urgency === "High").length,
+      medium: allTasks.filter(t => t.urgency === "Medium").length,
+      low: allTasks.filter(t => t.urgency === "Low").length,
+      overdue,
+      parentTasks: tasks.length,
+      subtasks: allTasks.length - tasks.length
     };
   }, [tasks]);
 
@@ -371,6 +447,75 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     setEditingTask(task);
     setIsEditDialogOpen(true);
   };
+
+  const handleSubtaskCreate = async (subtaskData: {
+    title: string;
+    description: string;
+    parent_task_id: string;
+  }) => {
+    try {
+      let retryCount = 0;
+      const maxRetries = 2;
+
+      while (retryCount <= maxRetries) {
+        try {
+          const accessToken = await getAccessToken();
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-subtask`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(subtaskData),
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            if (response.status === 401 && retryCount < maxRetries) {
+              await signIn();
+              retryCount++;
+              continue;
+            }
+            throw new Error(errorData.error || "Failed to create subtask");
+          }
+
+          // Refetch tasks to get the updated list with new subtask
+          await refetch();
+
+          // Show success toast
+          (window as any).showToast?.({
+            type: 'success',
+            title: '✅ Subtask Created',
+            description: `"${subtaskData.title}" has been added successfully.`,
+            duration: 3000
+          });
+
+          return;
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
+            await signIn();
+            retryCount++;
+            continue;
+          }
+          throw error;
+        }
+      }
+      throw new Error("Max retries exceeded");
+    } catch (error) {
+      console.error("Error creating subtask:", error);
+      (window as any).showToast?.({
+        type: 'error',
+        title: '❌ Failed to Create Subtask',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        duration: 5000
+      });
+    }
+  };
+
+
 
   const handleTaskComplete = async (taskId: string, completed: boolean) => {
     // Prevent multiple simultaneous updates to the same task
@@ -590,6 +735,265 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     return new Date(dueDate) < new Date();
   };
 
+  const toggleTaskExpanded = (taskId: string) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
+  };
+
+  // Recursive TaskItem component for parent-child hierarchy
+  const TaskItem = ({ task, index, level, parentId }: { 
+    task: Task; 
+    index: number; 
+    level: number; 
+    parentId?: string;
+  }) => {
+    const isCompleted = !!task.completed_at;
+    const isCompleting = completingTasks.has(task.id);
+    const isBeingUpdated = isUpdating === task.id;
+    const hasDueDate = task.due_date && !isCompleted;
+    const taskIsOverdue = hasDueDate && isOverdue(task.due_date!);
+    const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+    const isParentTask = level === 0 && hasSubtasks;
+    const isExpanded = expandedTasks.has(task.id);
+    
+    return (
+      <div key={task.id}>
+        {/* Drop zone above each item */}
+        {draggedTask && draggedTask !== task.id && level === 0 && (
+          <div
+            className={`h-2 transition-all duration-200 ${
+              dragOverIndex === index ? 'bg-primary/20 border-2 border-primary border-dashed rounded' : ''
+            }`}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, index)}
+          />
+        )}
+        
+        {/* Task item */}
+        <div 
+          ref={setTaskRef(task.id)}
+          className={cn(
+            "flex items-start gap-3 p-3 rounded-lg transition-all duration-300 relative overflow-hidden group",
+            // Systematic indentation and styling for subtasks
+            level > 0 && [
+              "ml-12 mr-4 bg-muted/20 border-l-2 border-muted", 
+              "rounded-l-none pl-4"
+            ],
+            draggedTask === task.id ? 'opacity-50 scale-95' : 'hover:bg-muted/50',
+            isCompleted && 'bg-green-50/50 dark:bg-green-900/10',
+            isCompleting && 'bg-gradient-to-r from-green-50 via-emerald-50 to-green-50 dark:from-green-900/20 dark:via-emerald-900/20 dark:to-green-900/20',
+            isBeingUpdated && animations.pulse.success,
+            taskIsOverdue && 'bg-red-50/30 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30'
+          )}
+          draggable={level === 0} // Only parent tasks are draggable
+          onDragStart={level === 0 ? (e) => handleDragStart(e, task.id) : undefined}
+          onDragEnd={level === 0 ? handleDragEnd : undefined}
+          role={level === 0 ? "listitem" : "listitem"}
+          aria-level={level + 1}
+        >
+          {/* Celebration sparkle overlay */}
+          {isCompleting && (
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute top-2 left-8 text-yellow-400 animate-sparkle">✨</div>
+              <div className="absolute top-3 right-8 text-blue-400 animate-sparkle delay-200">⭐</div>
+              <div className="absolute bottom-2 left-12 text-green-400 animate-sparkle delay-400">💫</div>
+            </div>
+          )}
+          
+          {/* Drag handle - only for parent tasks */}
+          {level === 0 && (
+            <div className="flex items-center h-6 cursor-grab active:cursor-grabbing">
+              <GripVertical className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+            </div>
+          )}
+          
+          {/* Expand/Collapse button - only for parent tasks with subtasks */}
+          <div className="flex items-center h-6 w-6">
+            {hasSubtasks ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTaskExpanded(task.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleTaskExpanded(task.id);
+                  }
+                }}
+                className="p-1 rounded hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50"
+                aria-label={isExpanded ? 
+                  `Collapse ${task.subtasks!.length} subtasks for ${task.title}` : 
+                  `Expand ${task.subtasks!.length} subtasks for ${task.title}`
+                }
+                aria-expanded={isExpanded}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            ) : (
+              <div className="w-5" aria-hidden="true" />
+            )}
+          </div>
+          
+          <div className={cn(
+            "flex items-center h-6 transition-transform duration-200", 
+            isCompleting && animations.taskCompletion.bounce
+          )}>
+            <Checkbox
+              checked={isCompleted}
+              onCheckedChange={(checked) =>
+                handleTaskComplete(task.id, checked as boolean).catch((error) => {
+                  console.error("Failed to update task:", error);
+                })
+              }
+              disabled={isBeingUpdated}
+              className={cn(
+                "transition-all duration-200",
+                isCompleting && "animate-pulse-success"
+              )}
+            />
+          </div>
+          
+          <div 
+            className="flex-1 min-w-0 relative cursor-pointer"
+            onClick={() => handleTaskEdit(task)}
+          >
+            <div className={cn(
+              "font-medium leading-6 relative transition-all duration-300",
+              isCompleted && "text-muted-foreground",
+              level > 0 && "text-sm" // Smaller text for subtasks
+            )}>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="flex-1 min-w-0">
+                  {task.title}
+                  {/* Animated strikethrough effect */}
+                  {isCompleted && (
+                    <div className={cn(
+                      "absolute top-1/2 left-0 h-0.5 bg-green-500 transition-all duration-400",
+                      isCompleting ? "w-full" : "w-full"
+                    )} />
+                  )}
+                </span>
+                {/* Subtask count indicator */}
+                {hasSubtasks && !isExpanded && (
+                  <span 
+                    className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0"
+                    aria-label={`${task.subtasks!.length} subtasks`}
+                  >
+                    {task.subtasks!.length}
+                  </span>
+                )}
+              </div>
+            </div>
+            {task.description && (
+              <div className={cn(
+                "text-sm text-muted-foreground mt-1 transition-opacity duration-300",
+                isCompleted && "opacity-60",
+                level > 0 && "text-xs" // Even smaller for subtask descriptions
+              )}>
+                {task.description}
+              </div>
+            )}
+            {/* Due Date */}
+            {hasDueDate && (
+              <div className={cn(
+                "flex items-center gap-1 mt-2 text-xs",
+                taskIsOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground"
+              )}>
+                <Calendar className="h-3 w-3" />
+                <span className={taskIsOverdue ? "font-medium" : ""}>
+                  Due {formatDueDate(task.due_date!)}
+                  {taskIsOverdue && " (Overdue)"}
+                </span>
+              </div>
+            )}
+          </div>
+
+
+          
+          <div className="flex items-center h-6">
+            <Badge
+              variant={
+                task.urgency === "High"
+                  ? "destructive"
+                  : task.urgency === "Medium"
+                  ? "default"
+                  : "secondary"
+              }
+              className={cn(
+                "transition-all duration-200",
+                isCompleted && "opacity-50 scale-90",
+                isCompleting && animations.taskCompletion.bounce,
+                level > 0 && "text-xs px-1.5 py-0.5" // Smaller badges for subtasks
+              )}
+            >
+              {task.urgency}
+            </Badge>
+          </div>
+        </div>
+        
+        {/* Render subtasks recursively - only when expanded */}
+        {hasSubtasks && isExpanded && (
+          <div 
+            className="space-y-1 mt-2 animate-in slide-in-from-top-2 fade-in duration-300"
+            role="group"
+            aria-label={`Subtasks for ${task.title}`}
+          >
+            {task.subtasks!.map((subtask, subtaskIndex) => (
+              <TaskItem 
+                key={subtask.id} 
+                task={subtask} 
+                index={subtaskIndex} 
+                level={level + 1}
+                parentId={task.id}
+              />
+            ))}
+          </div>
+        )}
+        
+        {/* Collapsed subtask preview */}
+        {hasSubtasks && !isExpanded && (
+          <div 
+            className="ml-12 mt-1 text-xs text-muted-foreground opacity-60"
+            aria-hidden="true"
+          >
+            {task.subtasks!.length === 1 
+              ? "1 subtask" 
+              : `${task.subtasks!.length} subtasks`} • 
+            <span className="ml-1">
+              {task.subtasks!.filter(st => st.completed_at).length} completed
+            </span>
+          </div>
+        )}
+        
+        {/* Drop zone below the last item */}
+        {index === filteredTasks.length - 1 && draggedTask && draggedTask !== task.id && level === 0 && (
+          <div
+            className={`h-2 mt-2 transition-all duration-200 ${
+              dragOverIndex === filteredTasks.length ? 'bg-primary/20 border-2 border-primary border-dashed rounded' : ''
+            }`}
+            onDragOver={(e) => handleDragOver(e, filteredTasks.length)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, filteredTasks.length)}
+          />
+        )}
+      </div>
+    );
+  };
+
   if (isTasksLoading) {
     return (
       <Card>
@@ -701,160 +1105,14 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredTasks.map((task: Task, index: number) => {
-                const isCompleted = !!task.completed_at;
-                const isCompleting = completingTasks.has(task.id);
-                const isBeingUpdated = isUpdating === task.id;
-                const hasDueDate = task.due_date && !isCompleted;
-                const taskIsOverdue = hasDueDate && isOverdue(task.due_date!);
-                
-                return (
-                  <div key={task.id}>
-                    {/* Drop zone above each item */}
-                    {draggedTask && draggedTask !== task.id && (
-                      <div
-                        className={`h-2 transition-all duration-200 ${
-                          dragOverIndex === index ? 'bg-primary/20 border-2 border-primary border-dashed rounded' : ''
-                        }`}
-                        onDragOver={(e) => handleDragOver(e, index)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, index)}
-                      />
-                    )}
-                    
-                    {/* Task item */}
-                    <div 
-                      ref={setTaskRef(task.id)}
-                      className={cn(
-                        "flex items-start gap-3 p-3 rounded-lg transition-all duration-300 relative overflow-hidden group",
-                        draggedTask === task.id ? 'opacity-50 scale-95' : 'hover:bg-muted/50',
-                        isCompleted && 'bg-green-50/50 dark:bg-green-900/10',
-                        isCompleting && 'bg-gradient-to-r from-green-50 via-emerald-50 to-green-50 dark:from-green-900/20 dark:via-emerald-900/20 dark:to-green-900/20',
-                        isBeingUpdated && animations.pulse.success,
-                        taskIsOverdue && 'bg-red-50/30 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30'
-                      )}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, task.id)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      {/* Celebration sparkle overlay */}
-                      {isCompleting && (
-                        <div className="absolute inset-0 pointer-events-none">
-                          <div className="absolute top-2 left-8 text-yellow-400 animate-sparkle">✨</div>
-                          <div className="absolute top-3 right-8 text-blue-400 animate-sparkle delay-200">⭐</div>
-                          <div className="absolute bottom-2 left-12 text-green-400 animate-sparkle delay-400">💫</div>
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center h-6 cursor-grab active:cursor-grabbing">
-                        <GripVertical className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
-                      </div>
-                      
-                      <div className={cn(
-                        "flex items-center h-6 transition-transform duration-200", 
-                        isCompleting && animations.taskCompletion.bounce
-                      )}>
-                        <Checkbox
-                          checked={isCompleted}
-                          onCheckedChange={(checked) =>
-                            handleTaskComplete(task.id, checked as boolean).catch((error) => {
-                              console.error("Failed to update task:", error);
-                            })
-                          }
-                          disabled={isBeingUpdated}
-                          className={cn(
-                            "transition-all duration-200",
-                            isCompleting && "animate-pulse-success"
-                          )}
-                        />
-                      </div>
-                      
-                      <div 
-                        className="flex-1 min-w-0 relative cursor-pointer"
-                        onClick={() => handleTaskEdit(task)}
-                      >
-                        <div className={cn(
-                          "font-medium leading-6 relative transition-all duration-300",
-                          isCompleted && "text-muted-foreground"
-                        )}>
-                          {task.title}
-                          {/* Animated strikethrough effect */}
-                          {isCompleted && (
-                            <div className={cn(
-                              "absolute top-1/2 left-0 h-0.5 bg-green-500 transition-all duration-400",
-                              isCompleting ? "w-full" : "w-full"
-                            )} />
-                          )}
-                        </div>
-                        {task.description && (
-                          <div className={cn(
-                            "text-sm text-muted-foreground mt-1 transition-opacity duration-300",
-                            isCompleted && "opacity-60"
-                          )}>
-                            {task.description}
-                          </div>
-                        )}
-                        {/* Due Date */}
-                        {hasDueDate && (
-                          <div className={cn(
-                            "flex items-center gap-1 mt-2 text-xs",
-                            taskIsOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground"
-                          )}>
-                            <Calendar className="h-3 w-3" />
-                            <span className={taskIsOverdue ? "font-medium" : ""}>
-                              Due {formatDueDate(task.due_date!)}
-                              {taskIsOverdue && " (Overdue)"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Edit button - shown on hover */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTaskEdit(task);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded hover:bg-muted"
-                        title="Edit task"
-                      >
-                        <Edit3 className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                      </button>
-                      
-                      <div className="flex items-center h-6">
-                        <Badge
-                          variant={
-                            task.urgency === "High"
-                              ? "destructive"
-                              : task.urgency === "Medium"
-                              ? "default"
-                              : "secondary"
-                          }
-                          className={cn(
-                            "transition-all duration-200",
-                            isCompleted && "opacity-50 scale-90",
-                            isCompleting && animations.taskCompletion.bounce
-                          )}
-                        >
-                          {task.urgency}
-                        </Badge>
-                      </div>
-                    </div>
-                    
-                    {/* Drop zone below the last item */}
-                    {index === filteredTasks.length - 1 && draggedTask && draggedTask !== task.id && (
-                      <div
-                        className={`h-2 mt-2 transition-all duration-200 ${
-                          dragOverIndex === filteredTasks.length ? 'bg-primary/20 border-2 border-primary border-dashed rounded' : ''
-                        }`}
-                        onDragOver={(e) => handleDragOver(e, filteredTasks.length)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, filteredTasks.length)}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+              {filteredTasks.map((task: Task, index: number) => 
+                <TaskItem 
+                  key={task.id} 
+                  task={task} 
+                  index={index} 
+                  level={0}
+                />
+              )}
             </div>
           )}
         </CardContent>
@@ -879,7 +1137,10 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
         task={editingTask}
         onTaskUpdate={handleTaskUpdate}
         onTaskDelete={handleTaskDelete}
+        onSubtaskCreate={handleSubtaskCreate}
       />
+
+
     </>
   );
 }); 

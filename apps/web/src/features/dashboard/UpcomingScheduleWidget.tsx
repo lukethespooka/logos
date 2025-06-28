@@ -69,7 +69,7 @@ const UpcomingScheduleWidget = () => {
   return (
     <FocusWrapper widgetId="upcoming-schedule" className="col-span-2">
       <Card className="p-4">
-        <CardHeader className="cursor-pointer rounded-t-lg transition-colors hover:bg-gray-100">
+        <CardHeader>
           <CardTitle>Upcoming Schedule</CardTitle>
           <CardDescription>Your next 24 hours.</CardDescription>
         </CardHeader>

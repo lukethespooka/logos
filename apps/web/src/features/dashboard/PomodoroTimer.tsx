@@ -3,12 +3,7 @@ import { Timer, Play, Pause, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
 
 interface TimerSettings {
   workDuration: number;
@@ -16,6 +11,8 @@ interface TimerSettings {
   longBreakDuration: number;
   sessionsUntilLongBreak: number;
   soundEnabled: boolean;
+  inactiveNotificationsEnabled: boolean;
+  inactiveTimeoutMinutes: number;
 }
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -24,6 +21,8 @@ const DEFAULT_SETTINGS: TimerSettings = {
   longBreakDuration: 15,
   sessionsUntilLongBreak: 4,
   soundEnabled: true,
+  inactiveNotificationsEnabled: true,
+  inactiveTimeoutMinutes: 15,
 };
 
 // Simple beep sound as a data URL
@@ -117,64 +116,46 @@ export function PomodoroTimer() {
   };
 
   return (
-    <TooltipProvider>
-      <div className="flex items-center gap-2.5">
-        <div className="flex items-center gap-2.5 rounded-md border bg-background px-4 py-2">
-          <IconWrapper>
-            <Timer className="text-primary" strokeWidth={2.5} />
-          </IconWrapper>
-          <span className="font-mono text-lg">{formatTime(timeLeft)}</span>
-          <span className="text-sm text-muted-foreground">
-            {isWorkSession ? "Work" : sessionCount % settings.sessionsUntilLongBreak === 0 ? "Long Break" : "Break"}
-          </span>
-        </div>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-12 w-12 flex items-center justify-center"
-              onClick={() => {
-                setIsRunning(!isRunning);
-              }}
-              aria-label={isRunning ? "Pause Timer" : "Start Timer"}
-            >
-              <IconWrapper>
-                {isRunning ? (
-                  <Pause className="text-primary" strokeWidth={2.5} />
-                ) : (
-                  <Play className="text-primary" strokeWidth={2.5} />
-                )}
-              </IconWrapper>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{isRunning ? "Pause Timer" : "Start Timer"}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-12 w-12 flex items-center justify-center"
-              onClick={() => {
-                handleReset();
-              }}
-              aria-label="Reset Timer"
-            >
-              <IconWrapper>
-                <RotateCcw className="text-primary" strokeWidth={2.5} />
-              </IconWrapper>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Reset Timer</p>
-          </TooltipContent>
-        </Tooltip>
+    <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 rounded-md border bg-background px-4 py-2">
+        <IconWrapper>
+          <Timer className="text-primary" strokeWidth={2.5} />
+        </IconWrapper>
+        <span className="font-mono text-lg">{formatTime(timeLeft)}</span>
+        <span className="text-sm text-muted-foreground">
+          {isWorkSession ? "Work" : sessionCount % settings.sessionsUntilLongBreak === 0 ? "Long Break" : "Break"}
+        </span>
       </div>
-    </TooltipProvider>
+
+      <button
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-12 w-12"
+        onClick={() => {
+          setIsRunning(!isRunning);
+        }}
+        aria-label={isRunning ? "Pause Timer" : "Start Timer"}
+        title={isRunning ? "Pause Timer" : "Start Timer"}
+      >
+        <IconWrapper>
+          {isRunning ? (
+            <Pause className="text-primary" strokeWidth={2.5} />
+          ) : (
+            <Play className="text-primary" strokeWidth={2.5} />
+          )}
+        </IconWrapper>
+      </button>
+
+      <button
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-12 w-12"
+        onClick={() => {
+          handleReset();
+        }}
+        aria-label="Reset Timer"
+        title="Reset Timer"
+      >
+        <IconWrapper>
+          <RotateCcw className="text-primary" strokeWidth={2.5} />
+        </IconWrapper>
+      </button>
+    </div>
   );
 } 

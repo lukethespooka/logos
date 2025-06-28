@@ -8,11 +8,15 @@ interface UseFocusMode {
   trackWidgetInteraction: (widgetId: string) => void;
 }
 
-const IDLE_TIMEOUT = 30000; // 30 seconds
 const STORAGE_KEY = "focus_mode";
 const IMPORTANCE_KEY = "widget_importance";
 
-export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
+interface InactivitySettings {
+  inactiveNotificationsEnabled: boolean;
+  inactiveTimeoutMinutes: number;
+}
+
+export function useFocusMode(): UseFocusMode {
   // Focus mode state
   const [isFocused, setIsFocused] = useState(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -28,9 +32,28 @@ export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
     return stored ? JSON.parse(stored) : {};
   });
 
+  // Get inactivity settings from localStorage
+  const getInactivitySettings = (): InactivitySettings => {
+    const stored = localStorage.getItem("pomodoroSettings");
+    if (stored) {
+      const settings = JSON.parse(stored);
+      return {
+        inactiveNotificationsEnabled: settings.inactiveNotificationsEnabled ?? true,
+        inactiveTimeoutMinutes: settings.inactiveTimeoutMinutes ?? 15
+      };
+    }
+    return {
+      inactiveNotificationsEnabled: true,
+      inactiveTimeoutMinutes: 15
+    };
+  };
+
   // Idle detection
   useEffect(() => {
     if (isFocused) return; // Don't prompt if already focused
+
+    const settings = getInactivitySettings();
+    if (!settings.inactiveNotificationsEnabled) return; // Don't prompt if disabled
 
     let timeoutId: number;
 
@@ -40,13 +63,13 @@ export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
         // Only prompt if not already focused
         if (!isFocused) {
           const shouldFocus = window.confirm(
-            "You've been inactive for a while. Would you like to enter Focus Mode?"
+            `You've been inactive for ${settings.inactiveTimeoutMinutes} minute${settings.inactiveTimeoutMinutes === 1 ? '' : 's'}. Would you like to enter Focus Mode?`
           );
           if (shouldFocus) {
             setIsFocused(true);
           }
         }
-      }, IDLE_TIMEOUT);
+      }, settings.inactiveTimeoutMinutes * 60 * 1000);
     };
 
     // Track user activity
@@ -55,6 +78,19 @@ export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
       window.addEventListener(event, resetTimer);
     });
 
+    // Listen for settings changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "pomodoroSettings") {
+        // Settings changed, restart timer with new settings
+        window.clearTimeout(timeoutId);
+        const newSettings = getInactivitySettings();
+        if (newSettings.inactiveNotificationsEnabled && !isFocused) {
+          resetTimer();
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
     resetTimer(); // Start initial timer
 
     return () => {
@@ -62,6 +98,7 @@ export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
       activities.forEach(event => {
         window.removeEventListener(event, resetTimer);
       });
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [isFocused]);
 
@@ -88,23 +125,23 @@ export function useFocusMode(timeoutMinutes: number = 5): UseFocusMode {
     setIsAutoFocused(false);
   }, []);
 
-  // Auto focus detection
-  useEffect(() => {
-    const checkActivity = () => {
-      // Implementation of activity checking
-      // For now, we'll just use a simple timeout
-      if (!isFocused) {
-        setIsAutoFocused(true);
-        setIsFocused(true);
-      }
-    };
+  // Auto focus detection - disabled for now
+  // useEffect(() => {
+  //   const checkActivity = () => {
+  //     // Implementation of activity checking
+  //     // For now, we'll just use a simple timeout
+  //     if (!isFocused) {
+  //       setIsAutoFocused(true);
+  //       setIsFocused(true);
+  //     }
+  //   };
 
-    const timer = setInterval(checkActivity, timeoutMinutes * 60 * 1000);
+  //   const timer = setInterval(checkActivity, 5 * 60 * 1000);
 
-    return () => {
-      clearInterval(timer);
-    };
-  }, [isFocused, timeoutMinutes]);
+  //   return () => {
+  //     clearInterval(timer);
+  //   };
+  // }, [isFocused]);
 
   return {
     isFocused,

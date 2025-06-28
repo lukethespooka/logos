@@ -15,7 +15,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogDescription,
 } from '@/components/ui/dialog';
 import {
@@ -24,12 +23,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+
 
 interface TimerSettings {
   workDuration: number;
@@ -37,6 +31,8 @@ interface TimerSettings {
   longBreakDuration: number;
   sessionsUntilLongBreak: number;
   soundEnabled: boolean;
+  inactiveNotificationsEnabled: boolean;
+  inactiveTimeoutMinutes: number;
 }
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -45,6 +41,8 @@ const DEFAULT_SETTINGS: TimerSettings = {
   longBreakDuration: 15,
   sessionsUntilLongBreak: 4,
   soundEnabled: true,
+  inactiveNotificationsEnabled: true,
+  inactiveTimeoutMinutes: 15,
 };
 
 export function SettingsDialog() {
@@ -56,6 +54,7 @@ export function SettingsDialog() {
   );
   const [volume, setVolume] = useState(soundManager.getVolume());
   const [isMuted, setIsMuted] = useState(soundManager.isSoundMuted());
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -83,37 +82,30 @@ export function SettingsDialog() {
   };
 
   return (
-    <TooltipProvider>
-      <Dialog>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="icon"
-                className="h-12 w-12 flex items-center justify-center"
-                aria-label="Settings"
-              >
-                <IconWrapper>
-                  <Cog className="text-primary" strokeWidth={2.5} />
-                </IconWrapper>
-              </Button>
-            </DialogTrigger>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Settings</p>
-          </TooltipContent>
-        </Tooltip>
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-12 w-12"
+        aria-label="Settings"
+        title="Settings"
+      >
+        <IconWrapper>
+          <Cog className="text-primary" strokeWidth={2.5} />
+        </IconWrapper>
+      </button>
+      
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Customize your timer, appearance, sound, and account preferences.
+            Customize your timer, notifications, appearance, sound, and account preferences.
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="timer">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="timer">Timer</TabsTrigger>
+            <TabsTrigger value="notifications">Notify</TabsTrigger>
             <TabsTrigger value="appearance">Theme</TabsTrigger>
             <TabsTrigger value="sound">Sound</TabsTrigger>
             <TabsTrigger value="account">Account</TabsTrigger>
@@ -205,6 +197,91 @@ export function SettingsDialog() {
                     <span className="text-sm text-muted-foreground">sessions</span>
                   </div>
                 </div>
+              </div>
+            </div>
+          </TabsContent>
+          <TabsContent value="notifications" className="space-y-4">
+            <div className="grid gap-4 py-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">Inactive Notifications</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Get reminded when you've been away from LogOS
+                    </p>
+                  </div>
+                  <Checkbox
+                    checked={settings.inactiveNotificationsEnabled}
+                    onCheckedChange={(checked) => 
+                      setSettings(prev => ({
+                        ...prev,
+                        inactiveNotificationsEnabled: checked as boolean
+                      }))
+                    }
+                  />
+                </div>
+                
+                {settings.inactiveNotificationsEnabled && (
+                  <div>
+                    <Label htmlFor="inactiveTimeout" className="text-sm font-medium">
+                      Notification Delay
+                    </Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      How long to wait before showing inactive reminder
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="inactiveTimeout"
+                        name="inactiveTimeoutMinutes"
+                        type="number"
+                        min="1"
+                        max="120"
+                        value={settings.inactiveTimeoutMinutes}
+                        onChange={handleSettingsChange}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-muted-foreground">minutes</span>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSettings(prev => ({ ...prev, inactiveTimeoutMinutes: 5 }))}
+                        className="text-xs"
+                      >
+                        5 min
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSettings(prev => ({ ...prev, inactiveTimeoutMinutes: 15 }))}
+                        className="text-xs"
+                      >
+                        15 min
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSettings(prev => ({ ...prev, inactiveTimeoutMinutes: 30 }))}
+                        className="text-xs"
+                      >
+                        30 min
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSettings(prev => ({ ...prev, inactiveTimeoutMinutes: 60 }))}
+                        className="text-xs"
+                      >
+                        1 hour
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </TabsContent>
@@ -338,6 +415,6 @@ export function SettingsDialog() {
         </Tabs>
       </DialogContent>
     </Dialog>
-    </TooltipProvider>
+    </>
   );
 } 

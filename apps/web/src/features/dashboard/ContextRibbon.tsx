@@ -3,12 +3,7 @@ import { Lightbulb, CalendarCheck } from "lucide-react";
 import { useFocusContext } from "@/contexts/FocusContext";
 import { PomodoroTimer } from "./PomodoroTimer";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
 
 const ContextRibbon = () => {
   const { isFocused } = useFocusContext();
@@ -23,20 +18,15 @@ const ContextRibbon = () => {
           </div>
           <div className="hidden h-8 border-l border-border sm:block" />
           <div className="hidden items-center gap-2 sm:flex">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-12 w-12 flex items-center justify-center" aria-label="Plan My Day">
-                    <IconWrapper>
-                      <CalendarCheck className="text-primary" strokeWidth={2.5} />
-                    </IconWrapper>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Plan My Day</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <button 
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-12 w-12"
+              aria-label="Plan My Day"
+              title="Plan My Day"
+            >
+              <IconWrapper>
+                <CalendarCheck className="text-primary" strokeWidth={2.5} />
+              </IconWrapper>
+            </button>
             <PomodoroTimer />
           </div>
         </div>

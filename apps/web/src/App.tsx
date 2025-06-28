@@ -30,26 +30,38 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen w-full flex-col items-center bg-gray-50 p-8">
-        <header className="w-full max-w-7xl">
-          <h1 className="text-3xl font-bold text-gray-800">Welcome, Alex</h1>
-        </header>
-        <div className="mt-4">
-          <ContextRibbon />
+      <main className="min-h-screen w-full overflow-x-hidden bg-gray-50">
+        <div className="mx-auto flex w-full max-w-7xl flex-col p-8">
+          <header className="w-full">
+            <h1 className="text-3xl font-bold text-gray-800">Welcome, Alex</h1>
+          </header>
+          <div className="mt-4 w-full">
+            <ContextRibbon />
+          </div>
+          <div className="mt-8 w-full flex-grow">
+            {isAuthenticated ? (
+              <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <div className="w-full overflow-hidden">
+                  <DailyBriefWidget />
+                </div>
+                <div className="w-full overflow-hidden">
+                  <PrioritizedInboxWidget />
+                </div>
+                <div className="w-full overflow-hidden">
+                  <SmartTaskOverviewWidget />
+                </div>
+                <div className="w-full overflow-hidden">
+                  <UpcomingScheduleWidget />
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                Loading...
+              </div>
+            )}
+          </div>
         </div>
-        <main className="mt-8 flex flex-grow items-center justify-center">
-          {isAuthenticated ? (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <DailyBriefWidget />
-              <UpcomingScheduleWidget />
-              <PrioritizedInboxWidget />
-              <SmartTaskOverviewWidget />
-            </div>
-          ) : (
-            <p>Signing in...</p>
-          )}
-        </main>
-      </div>
+      </main>
     </QueryClientProvider>
   );
 } 

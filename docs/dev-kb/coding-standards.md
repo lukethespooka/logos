@@ -16,7 +16,15 @@ This document defines the coding standards for the LogOS project. All code gener
 - **Component Naming:** Components should be PascalCase (e.g., `DailyBriefWidget.tsx`).
 - **Hooks:** Custom hooks should be prefixed with `use` (e.g., `useAuth.ts`).
 - **Props:** Use interfaces for component props, prefixed with `I` (e.g., `IDailyBriefWidgetProps`).
-- **File Structure:** Feature-based folder structure as defined in the blueprint (`/features/<name>/`).
+- **File Structure:** Feature-based folder structure as defined in the blueprint (`/features/<n>/`).
+- **Component Template:** Follow the template in `docs/stories/ux/component-template.md` for new components.
+
+## UI & UX Standards
+- **Widget Specifications:** Follow the detailed specs in `docs/stories/ux/dashboard-widgets.md`.
+- **Tailwind Patterns:** Use the predefined patterns from `docs/stories/ux/tailwind-cheatsheet.md`.
+- **Accessibility:** Ensure all components meet the accessibility requirements defined in our UX docs.
+- **Loading States:** Implement skeleton loaders and loading states as specified in the component template.
+- **Error Handling:** Follow the error state patterns from our UX documentation.
 
 ## Linting
 - **ESLint:** The `.eslintrc` configuration in the root directory is the single source of truth for linting rules.
@@ -27,4 +35,5 @@ This document defines the coding standards for the LogOS project. All code gener
 - **Variables:** camelCase (e.g., `dailyBriefData`).
 - **Constants:** UPPER_SNAKE_CASE (e.g., `API_BASE_URL`).
 - **Functions:** camelCase (e.g., `fetchDailyBrief`).
-- **CSS Classes:** Use Tailwind CSS utility classes. Avoid custom CSS files where possible. 
+- **CSS Classes:** Use Tailwind CSS utility classes. Avoid custom CSS files where possible.
+- **Class Combinations:** Follow the patterns in our Tailwind cheat sheet for common UI patterns. 

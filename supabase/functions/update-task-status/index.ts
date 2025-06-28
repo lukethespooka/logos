@@ -4,63 +4,72 @@
 
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-import { createClient } from '@supabase/supabase-js';
-import { corsHeaders } from '../_shared/cors.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
+import { corsHeaders } from '../_shared/cors.ts'
 
-console.log("Hello from Functions!")
+console.log("Starting update-task-status function...")
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Create a Supabase client with the user's token.
-    const authHeader = req.headers.get('Authorization')!;
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
+      {
+        auth: {
+          persistSession: false,
+        },
+        global: {
+          headers: {
+            Authorization: req.headers.get('Authorization') ?? '',
+          },
+        },
+      }
+    )
 
-    const {
-      data: { user },
-    } = await supabaseClient.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Not authenticated')
 
-    if (!user) {
-      throw new Error('User not found');
-    }
+    const { task_id, completed_at } = await req.json()
+    if (!task_id) throw new Error('task_id is required')
 
-    const { task_id, completed_at } = await req.json();
+    console.log("Updating task:", task_id, "for user:", user.id)
 
-    if (!task_id) {
-      throw new Error('task_id is required');
-    }
-
-    const { data: updatedTask, error } = await supabaseClient
+    const { data: updatedTask, error: updateError } = await supabaseClient
       .from('tasks')
       .update({
-        completed_at: completed_at,
+        completed_at,
         updated_at: new Date().toISOString(),
       })
       .eq('id', task_id)
       .eq('user_id', user.id)
       .select()
-      .single();
+      .single()
 
-    if (error) {
-      throw error;
-    }
+    if (updateError) throw updateError
 
-    return new Response(JSON.stringify(updatedTask), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    console.log("Task updated successfully")
+
+    return new Response(
+      JSON.stringify(updatedTask),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    });
+    console.error("Error in update-task-status:", error.message)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      },
+    )
   }
 })
 

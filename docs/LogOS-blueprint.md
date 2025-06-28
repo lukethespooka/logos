@@ -30,6 +30,8 @@
 | **Daily Activity Trends** | Simple line chart of productivity metrics | Toggle between day / week / month |
 | **System Health Bar** | Live status of errors & token spend (green/yellow/red) | Links to Logs dashboard |
 
+> **Detailed UX Specifications:** See `docs/stories/ux/dashboard-widgets.md` for complete widget specifications, including accessibility requirements, loading states, and error handling.
+
 ### 3.2  Navigation & Orientation *(sidebar‑less)*
 - **⌘K (Command+K) Master Command Palette / Search** – Spotlight‑style overlay (keyboard shortcut, top‑right button, or voice alias) for fuzzy navigation, quick actions, and agent commands. Recent items and agent‑suggested queries bubble to the top.
 - **Context Ribbon** – A slim, auto‑hiding bar beneath the header that surfaces *Next Best Actions* in real time (e.g., "Review Inbox", "Plan My Day", "Start Focus Timer"). It learns from user successes/failures so suggestions improve over time.
@@ -116,6 +118,7 @@ These are the AI agents that **run inside LogOS** to help end-users with product
 | Layer | Tech Choice | Rationale |
 |-------|------------|-----------|
 | **Frontend** | React + Vite + Tailwind + shadcn/ui + VitePWA | Rapid prototyping, offline support |
+| **Component Standards** | UX Documentation (`docs/stories/ux/`) | Consistent patterns & accessibility |
 | **State Mgmt** | TanStack Query + Zustand | Cache syncing & minimal boilerplate |
 | **Data Access** | Data‑Permissions Matrix wrapper | Enforces private / workspace / org visibility |
 | **Backend** | Supabase Edge Functions (Deno) | *Chosen for Phase 1* — zero‑idle cost, Postgres built‑in (Fastify micro‑service optional in Phase 2) | Serverless pricing, Postgres built‑in |
@@ -145,7 +148,7 @@ These are the AI agents that **run inside LogOS** to help end-users with product
 
 > **Key Architectural Note:** This runtime overlay is completely separate from BMAD development agents. BMAD helps us *build* LogOS; this overlay helps *users* be productive.
 
-## 5.2  Function Pillars & How They Might Manifest
+### 5.2  Function Pillars & How They Might Manifest
 | Pillar | What It **Does** | Likely Micro‑Agents (runtime) | UI Surface |
 |--------|------------------|------------------------------|------------|
 | **AI Task Planner** | Breaks large goals into bite‑sized, deadline‑aware tasks; auto‑prioritises daily queue. | `TaskBot`, `FocusCoach`, `DeadlineSentry` | Smart Task Overview widget + "Plan My Day" button |
@@ -173,11 +176,8 @@ These are the AI agents that **run inside LogOS** to help end-users with product
 
 > **Recommendation:** Skip MCP for the very first MVP. Introduce it once >3 micro‑services/agents need central coordination.
 
----
-
 ### 5.4  Unified Provider Connectors (Google ↔ Apple ↔ O365)
 [CONTENT UNCHANGED]
----
 
 ### 5.5  Knowledge & Search Strategy *(Phased Approach)*
 
@@ -363,3 +363,59 @@ $$ LANGUAGE plpgsql;
 5. **Schedule a 30‑min focus session** to stub the first React components.
 
 > *Remember: tiny, rewarding steps keep the dopamine flowing. Let's vibe‑code this thing!*
+
+## 6   Development Standards & Documentation
+
+### 6.1  UX Standards
+The following documentation defines our UX standards and patterns:
+
+1. **Widget Specifications** (`docs/stories/ux/dashboard-widgets.md`)
+   - Detailed specifications for each dashboard widget
+   - Common widget properties and styling
+   - Accessibility requirements
+   - State management patterns
+   - Animation guidelines
+   - Responsive behavior
+
+2. **Tailwind Patterns** (`docs/stories/ux/tailwind-cheatsheet.md`)
+   - Layout patterns
+   - Typography scales
+   - Interactive elements
+   - Status indicators
+   - Animation classes
+   - Responsive patterns
+   - Accessibility helpers
+
+3. **Component Template** (`docs/stories/ux/component-template.md`)
+   - Basic component structure
+   - TypeScript interfaces
+   - Loading and error states
+   - Accessibility features
+   - Testing template
+   - Best practices
+
+### 6.2  Development Knowledge Base
+The following documentation guides our development process:
+
+1. **Coding Standards** (`docs/dev-kb/coding-standards.md`)
+   - TypeScript & React patterns
+   - File structure
+   - Naming conventions
+   - Linting rules
+
+2. **Quality Checklist** (`docs/dev-kb/quality-checklist.md`)
+   - Pre-implementation checks
+   - Implementation requirements
+   - Review criteria
+   - Deployment checklist
+
+3. **API Patterns** (`docs/dev-kb/api-patterns.md`)
+   - Endpoint structure
+   - Error handling
+   - Authentication
+   - Rate limiting
+
+4. **Architecture Decisions** (`docs/dev-kb/architecture-decisions.md`)
+   - Technical choices
+   - System design
+   - Integration patterns

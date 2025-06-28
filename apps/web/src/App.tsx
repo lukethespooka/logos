@@ -1,67 +1,112 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { Button } from "./components/ui/button";
+import { SmartTaskOverviewWidget } from "./features/dashboard/SmartTaskOverviewWidget";
 import DailyBriefWidget from "./features/dashboard/DailyBriefWidget";
 import PrioritizedInboxWidget from "./features/dashboard/PrioritizedInboxWidget";
 import UpcomingScheduleWidget from "./features/dashboard/UpcomingScheduleWidget";
-import SmartTaskOverviewWidget from "./features/dashboard/SmartTaskOverviewWidget";
-import { supabase } from "./lib/supabase";
+import { useState } from "react";
 import ContextRibbon from "./features/dashboard/ContextRibbon";
+import { FocusProvider, useFocusContext } from './contexts/FocusContext';
+import { FocusWrapper } from "@/components/FocusWrapper";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { ToastContainer } from "./components/ui/toast";
 
 const queryClient = new QueryClient();
 
-export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+function Dashboard() {
+  const { user, signIn } = useAuth();
+  const { isFocused, toggleFocus } = useFocusContext();
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Temporary login for development
-  useEffect(() => {
-    const signIn = async () => {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: "test@example.com",
-        password: "password123",
-      });
-      if (error) {
-        console.error("Error signing in test user:", error);
-      } else {
-        setIsAuthenticated(true);
-      }
-    };
-    signIn();
-  }, []);
+  const handleSignIn = async () => {
+    try {
+      setIsLoading(true);
+      await signIn();
+    } catch (error) {
+      console.error("Error signing in:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <h1 className="mb-4 text-2xl font-bold">Welcome to LogOS</h1>
+          <Button 
+            onClick={handleSignIn} 
+            disabled={isLoading}
+          >
+            {isLoading ? "Signing in..." : "Sign in with Test Account"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <main className="min-h-screen w-full overflow-x-hidden bg-gray-50">
-        <div className="mx-auto flex w-full max-w-7xl flex-col p-8">
-          <header className="w-full">
-            <h1 className="text-3xl font-bold text-gray-800">Welcome, Alex</h1>
-          </header>
-          <div className="mt-4 w-full">
-            <ContextRibbon />
+    <div className="min-h-screen bg-background">
+      <ContextRibbon />
+      <div className="container mx-auto p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold">Welcome, {user.email}</h1>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={toggleFocus}
+              className="ml-4"
+            >
+              {isFocused ? "Exit Focus" : "Enter Focus"}
+            </Button>
           </div>
-          <div className="mt-8 w-full flex-grow">
-            {isAuthenticated ? (
-              <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                <div className="w-full overflow-hidden">
-                  <DailyBriefWidget />
-                </div>
-                <div className="w-full overflow-hidden">
-                  <PrioritizedInboxWidget />
-                </div>
-                <div className="w-full overflow-hidden">
-                  <SmartTaskOverviewWidget />
-                </div>
-                <div className="w-full overflow-hidden">
-                  <UpcomingScheduleWidget />
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                Loading...
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <SettingsDialog />
           </div>
         </div>
-      </main>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-1 lg:col-span-2">
+            <FocusWrapper widgetId="tasks">
+              <SmartTaskOverviewWidget />
+            </FocusWrapper>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-2">
+            <FocusWrapper widgetId="daily-brief">
+              <DailyBriefWidget />
+            </FocusWrapper>
+          </div>
+          <div className="sm:col-span-1 lg:col-span-2">
+            <FocusWrapper widgetId="inbox">
+              <PrioritizedInboxWidget />
+            </FocusWrapper>
+          </div>
+          <div className="sm:col-span-1 lg:col-span-2">
+            <FocusWrapper widgetId="schedule">
+              <UpcomingScheduleWidget />
+            </FocusWrapper>
+          </div>
+        </div>
+      </div>
+      <ToastContainer />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <FocusProvider>
+            <Dashboard />
+          </FocusProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
-} 
+}
+
+export default App; 

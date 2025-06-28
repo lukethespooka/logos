@@ -5,10 +5,10 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-import { createClient } from '@supabase/supabase-js';
-import { corsHeaders } from '../_shared/cors.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
+import { corsHeaders } from '../_shared/cors.ts'
 
-console.log("Hello from Functions!")
+console.log("Starting get-schedule function...")
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -16,26 +16,35 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Create a Supabase client with the user's token.
-    const authHeader = req.headers.get('Authorization')!;
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('No authorization header')
+    }
+
+    // Create a Supabase client with the Auth context of the function
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      }
+    )
 
-    const {
-      data: { user },
-    } = await supabaseClient.auth.getUser();
+    // Get the user from the auth context
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Not authenticated')
 
-    if (!user) {
-      throw new Error('User not found');
-    }
+    console.log("Fetching schedule for user:", user.id)
 
     const now = new Date();
     const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-    const { data: scheduleItems, error } = await supabaseClient
+    // Get schedule items for the authenticated user
+    const { data: scheduleItems, error: scheduleError } = await supabaseClient
       .from('schedule_items')
       .select('*')
       .eq('user_id', user.id)
@@ -43,19 +52,26 @@ Deno.serve(async (req) => {
       .lte('start_time', in24Hours.toISOString())
       .order('start_time', { ascending: true });
 
-    if (error) {
-      throw error;
-    }
+    if (scheduleError) throw scheduleError
 
-    return new Response(JSON.stringify(scheduleItems), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    console.log("Found schedule items:", scheduleItems?.length ?? 0)
+
+    return new Response(
+      JSON.stringify(scheduleItems),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    });
+    console.error("Error in get-schedule:", error.message)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: error.message === 'Not authenticated' ? 401 : 400,
+      },
+    )
   }
 })
 

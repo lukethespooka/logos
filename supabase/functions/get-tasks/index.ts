@@ -5,71 +5,104 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-import { createClient } from "@supabase/supabase-js";
-import { corsHeaders } from '../_shared/cors.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
+import { corsHeaders } from '../_shared/cors.ts'
 
-console.log("Hello from Functions!")
+console.log("Starting get-tasks function...")
 
 Deno.serve(async (req) => {
   // This is needed if you're planning to invoke your function from a browser.
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Create a Supabase client with the user's token.
-    const authHeader = req.headers.get('Authorization')!;
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('No authorization header')
+    }
+
+    // Log the token format (without exposing the actual token)
+    console.log("Auth header format:", authHeader.startsWith('Bearer ') ? 'Bearer token present' : 'Invalid format')
+
+    // Create a Supabase client with the Auth context of the function
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+        },
+      }
+    )
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseClient.auth.getUser();
-
-    if (userError) {
-      throw userError;
-    }
+    // Get the user from the auth context
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
     
-    if (!user) {
-        return new Response(JSON.stringify({ error: 'User not found' }), {
+    if (userError) {
+      console.error("User error:", userError.message)
+      // Check if it's a session error
+      if (userError.message.includes('session')) {
+        return new Response(
+          JSON.stringify({ error: 'Session invalid or expired' }),
+          {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 401,
-        });
+          }
+        )
+      }
+      throw userError
     }
 
-    const { data: tasks, error } = await supabaseClient
+    if (!user) {
+      console.error("No user found")
+      return new Response(
+        JSON.stringify({ error: 'Not authenticated' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        }
+      )
+    }
+
+    console.log("Fetching tasks for user:", user.id)
+
+    // Get tasks for the authenticated user
+    const { data: tasks, error: tasksError } = await supabaseClient
       .from('tasks')
-      .select(`
-        *,
-        project:projects(id, name),
-        tags:task_tags(tag:tags(id, name))
-      `)
-      .eq('user_id', user.id);
+      .select('*')
+      .eq('user_id', user.id)
+      .order('completed_at', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: false })
 
-    if (error) {
-      throw error;
+    if (tasksError) {
+      console.error("Tasks error:", tasksError.message)
+      throw tasksError
     }
 
-    // The query returns tags in a nested structure, let's flatten it.
-    const formattedTasks = tasks.map(task => ({
-      ...task,
-      project: task.project,
-      tags: task.tags.map((t: any) => t.tag),
-    }));
+    console.log("Found tasks:", tasks?.length ?? 0)
 
-    return new Response(JSON.stringify(formattedTasks), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify(tasks),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    });
+    console.error("Error in get-tasks:", error.message)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: error.message.includes('authenticated') || error.message.includes('session') ? 401 : 400,
+      },
+    )
   }
 })
 

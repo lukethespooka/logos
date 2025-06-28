@@ -47,4 +47,11 @@ BEGIN
     INSERT INTO public.task_tags (task_id, tag_id)
     SELECT t.id, tag_id_design FROM public.tasks t WHERE t.title = 'Develop landing page mockups'
     ON CONFLICT (task_id, tag_id) DO NOTHING;
+
+    -- Seed Schedule Items
+    INSERT INTO public.schedule_items (user_id, title, start_time, end_time, color)
+    VALUES
+        (test_user_id, 'Project Standup', now() + interval '2 hours', now() + interval '2 hours 30 minutes', 'bg-blue-500'),
+        (test_user_id, 'Design Review', now() + interval '5 hours', now() + interval '6 hours', 'bg-green-500'),
+        (test_user_id, 'Focus Block: Code', now() + interval '8 hours', now() + interval '10 hours', 'bg-indigo-500');
 END $$; 

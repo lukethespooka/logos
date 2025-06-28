@@ -9,7 +9,7 @@ import { mockSchedule } from "./mocks";
 
 const UpcomingScheduleWidget = () => {
   return (
-    <Card className="w-[360px]">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Upcoming Schedule</CardTitle>
         <CardDescription>Your next 24 hours.</CardDescription>

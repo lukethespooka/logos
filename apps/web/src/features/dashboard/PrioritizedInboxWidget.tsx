@@ -10,7 +10,7 @@ import { mockInboxClusters } from "./mocks";
 
 const PrioritizedInboxWidget = () => {
   return (
-    <Card className="w-[360px]">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Prioritized Inbox</CardTitle>
         <CardDescription>AI-powered triage for your email.</CardDescription>

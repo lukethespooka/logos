@@ -1,12 +1,26 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 import DailyBriefWidget from "./features/dashboard/DailyBriefWidget";
 import PrioritizedInboxWidget from "./features/dashboard/PrioritizedInboxWidget";
 import UpcomingScheduleWidget from "./features/dashboard/UpcomingScheduleWidget";
 import SmartTaskOverviewWidget from "./features/dashboard/SmartTaskOverviewWidget";
+import { supabase } from "./lib/supabase";
 
 const queryClient = new QueryClient();
 
 export default function App() {
+  // Temporary login for development
+  useEffect(() => {
+    const signIn = async () => {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: "test@example.com",
+        password: "password123",
+      });
+      if (error) console.error("Error signing in test user:", error);
+    };
+    signIn();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen w-full flex-col items-center bg-gray-50 p-8">

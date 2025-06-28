@@ -34,7 +34,7 @@ const DailyBriefWidget = () => {
   });
 
   return (
-    <Card className="w-[360px]">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Daily Brief</CardTitle>
         <CardDescription>

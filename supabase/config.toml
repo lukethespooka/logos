@@ -326,3 +326,36 @@ entrypoint = "./functions/briefbot-hello/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/briefbot-hello/*.html" ]
+
+[functions.get-tasks]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-tasks/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/get-tasks/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/get-tasks/*.html" ]
+
+[functions.update-task-status]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-task-status/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/update-task-status/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/update-task-status/*.html" ]
+
+[functions.get-schedule]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-schedule/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/get-schedule/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/get-schedule/*.html" ]

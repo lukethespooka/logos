@@ -16,6 +16,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { Home, Layout } from "lucide-react";
 import { Breadcrumb } from "./components/ui/breadcrumb";
 import { QuickNavDock } from "./components/QuickNavDock";
+import { FeatureFlagDebugger } from "./components/FeatureFlagDebugger";
 
 const queryClient = new QueryClient();
 
@@ -178,6 +179,13 @@ function Dashboard() {
             </FocusWrapper>
           </div>
         </div>
+        
+        {/* Development Feature Flag Debugger */}
+        {import.meta.env.DEV && (
+          <div className="mt-8">
+            <FeatureFlagDebugger />
+          </div>
+        )}
         
         {/* Quick Navigation Dock */}
         <QuickNavDock

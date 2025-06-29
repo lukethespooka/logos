@@ -22,6 +22,27 @@ This document records the key architectural decisions made for the LogOS project
 - **Rationale:** De-risks the MVP by avoiding bleeding-edge dependencies (`mcp-crawl4ai-rag`). The Supabase-native approach is battle-tested, uses our existing infrastructure, and can be implemented quickly.
 - **Alternatives Considered:** `mcp-crawl4ai-rag`. Deferred to a later phase due to stability concerns.
 
+## Hybrid AI Architecture
+- **Decision (2025-01-02):** Implement hybrid local/cloud AI processing using Ollama for privacy-sensitive tasks and OpenAI for creative tasks.
+- **Rationale:** 
+  - **Privacy**: Email and calendar content processed locally protects sensitive user data
+  - **Cost**: 90% local processing reduces cloud API costs from $5/day to <$1/day per user
+  - **Performance**: Local models provide faster responses for routine tasks (<2s vs. 5s)
+  - **Reliability**: Local processing provides offline capability and reduces external dependencies
+- **Local Models**: Mistral 7B (email triage), LLaMA 3.1 8B (calendar analysis), Phi3 Mini (quick responses)
+- **Cloud Models**: GPT-4o-mini (creative writing), GPT-4o (complex reasoning)
+- **Alternatives Considered:** Pure cloud approach (rejected for privacy/cost), pure local approach (rejected for creative task quality)
+
+## Provider Integration Strategy
+- **Decision (2025-01-02):** Implement bidirectional sync with Google (Gmail, Calendar, Docs) and Apple (Calendar) with OAuth 2.0.
+- **Rationale:** 
+  - Enables LogOS to become true productivity co-pilot with real data
+  - Bidirectional capabilities allow AI to take actions on user's behalf
+  - Aligns with blueprint vision of unified workspace reducing context-switching
+- **Privacy Controls**: Minimal data storage, local processing for sensitive content, user-controlled permissions
+- **Phase 1**: Google integration (better APIs), Phase 2: Apple integration (more complex)
+- **Alternatives Considered:** Read-only integration (rejected for limited value), single provider support (rejected for user lock-in)
+
 ## Future Architectural Enhancements
 
 This section documents architectural concepts that are planned for future versions of LogOS. They are not to be implemented in the initial MVP but should be considered in all ongoing design work.

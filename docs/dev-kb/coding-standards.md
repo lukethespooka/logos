@@ -36,4 +36,44 @@ This document defines the coding standards for the LogOS project. All code gener
 - **Constants:** UPPER_SNAKE_CASE (e.g., `API_BASE_URL`).
 - **Functions:** camelCase (e.g., `fetchDailyBrief`).
 - **CSS Classes:** Use Tailwind CSS utility classes. Avoid custom CSS files where possible.
-- **Class Combinations:** Follow the patterns in our Tailwind cheat sheet for common UI patterns. 
+- **Class Combinations:** Follow the patterns in our Tailwind cheat sheet for common UI patterns.
+
+## Sprint 3 Standards & Best Practices
+
+### AI Integration Standards
+- **Error Boundaries:** All AI-powered components must be wrapped in `AIErrorBoundary`
+- **Fallback Content:** Every AI feature must have static fallback content for when AI fails
+- **Cost Tracking:** All AI API calls must log costs and usage metrics in `ai_interactions` table
+- **Privacy Headers:** Use `X-Privacy-Level` header to indicate content sensitivity (high/medium/low)
+- **Timeout Handling:** All AI requests must have 30-second timeouts with graceful fallbacks
+- **Response Validation:** Validate all AI responses before using in UI components
+
+### Provider Integration Standards
+- **OAuth Token Security:** Always encrypt tokens before storage, never log tokens in plain text
+- **Rate Limiting:** Implement exponential backoff for all provider API calls
+- **Error Handling:** Gracefully handle token expiration, API downtime, quota exceeded scenarios
+- **Data Minimization:** Process and extract insights, don't store full email/calendar content
+- **Sync Strategy:** Use incremental sync with `last_sync` timestamps to avoid full data reloads
+- **Provider Agnostic:** Design APIs to work with multiple providers (Gmail, Outlook, Apple)
+
+### Feature Flag Usage
+- **Default Off:** All new AI features must be feature-flagged and default to disabled
+- **Gradual Rollout:** Use percentage-based rollouts for new features (5%, 25%, 50%, 100%)
+- **Quick Disable:** Ensure all features can be disabled instantly if issues arise
+- **User Control:** Allow users to opt-in/out of experimental features in settings
+- **Environment Specific:** Different flag values for development, staging, production
+
+### Development Environment Standards
+- **Mock Modes:** Provide mock AI responses and provider APIs for development without external dependencies
+- **Local Testing:** Ensure all AI features work with local-only Ollama setup
+- **Environment Parity:** Development environment should mirror production as closely as possible
+- **Quick Setup:** New developers should be productive within 30 minutes using setup scripts
+- **Documentation:** All environment variables must be documented with examples
+
+### Cost Control Standards
+- **Budget Enforcement:** All AI requests must check daily budget before processing
+- **Usage Tracking:** Log every AI interaction with precise cost calculation
+- **Automatic Fallbacks:** Implement cascading fallbacks (cloud → local → static)
+- **User Transparency:** Show users their AI usage and costs in settings
+- **Alert Thresholds:** Alert at 50%, 80%, 95% of daily budget
+- **Emergency Overrides:** Allow manual budget increases for critical use cases 

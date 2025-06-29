@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cog, LogOut, Sun, Moon, Monitor, Keyboard } from 'lucide-react';
+import { Cog, LogOut, Sun, Moon, Monitor, Keyboard, Link } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,8 @@ import { soundManager } from '@/lib/sounds';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { ProviderConnectionsDialog } from './ProviderConnectionsDialog';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import {
   Dialog,
   DialogContent,
@@ -48,6 +50,7 @@ const DEFAULT_SETTINGS: TimerSettings = {
 export function SettingsDialog() {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { hasAnyProviderIntegrations } = useFeatureFlags();
   const [settings, setSettings] = useLocalStorage<TimerSettings>(
     "pomodoroSettings",
     DEFAULT_SETTINGS
@@ -103,12 +106,15 @@ export function SettingsDialog() {
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="timer">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className={`grid w-full ${hasAnyProviderIntegrations ? 'grid-cols-7' : 'grid-cols-6'}`}>
             <TabsTrigger value="timer">Timer</TabsTrigger>
             <TabsTrigger value="notifications">Notify</TabsTrigger>
             <TabsTrigger value="appearance">Theme</TabsTrigger>
             <TabsTrigger value="sound">Sound</TabsTrigger>
             <TabsTrigger value="shortcuts">Keys</TabsTrigger>
+            {hasAnyProviderIntegrations && (
+              <TabsTrigger value="providers">Connect</TabsTrigger>
+            )}
             <TabsTrigger value="account">Account</TabsTrigger>
           </TabsList>
           <TabsContent value="timer" className="space-y-4">
@@ -454,6 +460,43 @@ export function SettingsDialog() {
               </div>
             </div>
           </TabsContent>
+          {hasAnyProviderIntegrations && (
+            <TabsContent value="providers" className="space-y-4">
+              <div className="grid gap-4 py-4">
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Link className="h-4 w-4" />
+                    Provider Connections
+                  </Label>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Connect your email and calendar accounts to enable AI-powered insights
+                  </p>
+                  
+                  <ProviderConnectionsDialog 
+                    trigger={
+                      <Button variant="outline" className="w-full flex items-center gap-2">
+                        <Link className="h-4 w-4" />
+                        Manage Connections
+                      </Button>
+                    }
+                  />
+                  
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 mb-2">
+                      <span>🔒</span>
+                      <span className="font-medium text-sm">Privacy First</span>
+                    </div>
+                    <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-1">
+                      <li>• All connections use read-only permissions</li>
+                      <li>• Email content is processed locally with AI</li>
+                      <li>• Only summaries and insights are stored</li>
+                      <li>• You can disconnect at any time</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
           <TabsContent value="account" className="space-y-4">
             <div className="grid gap-4 py-4">
               <div className="flex items-center justify-between">

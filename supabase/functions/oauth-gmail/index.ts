@@ -1,6 +1,21 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { handleError, validateRequest, validators, AuthError, ValidationError } from '../_shared/error-handler.ts'
+import { ServiceRegistry } from '../_shared/service-registry.ts'
+import { encryptToken, decryptToken } from '../_shared/encryption.ts'
+
+const registry = ServiceRegistry.getInstance()
+const googleAuthBreaker = registry.registerService({
+  name: 'google-auth',
+  failureThreshold: 3,
+  resetTimeout: 30000
+})
+
+const googleTokenBreaker = registry.registerService({
+  name: 'google-token',
+  failureThreshold: 3,
+  resetTimeout: 30000
+})
 
 interface OAuthRequest {
   action: 'initiate' | 'callback' | 'refresh' | 'disconnect'
@@ -13,18 +28,41 @@ interface GoogleTokenResponse {
   access_token: string
   refresh_token?: string
   expires_in: number
-  token_type: string
   scope: string
+  token_type: string
 }
 
-// Required Gmail scopes for read-only access
+// Required Gmail scopes for comprehensive access
 const REQUIRED_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
+  // Gmail - Full access
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.labels',
-  'https://www.googleapis.com/auth/userinfo.email'
+  
+  // Calendar - Full access
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events',
+  
+  // Drive - Full access for docs
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file',
+  
+  // Tasks - Full access
+  'https://www.googleapis.com/auth/tasks',
+  
+  // Maps & Location
+  'https://www.googleapis.com/auth/maps.embed',
+  'https://www.googleapis.com/auth/maps.places',
+  'https://www.googleapis.com/auth/maps.places.reviews',
+  'https://www.googleapis.com/auth/geolocation',
+  
+  // User info
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile'
 ]
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -40,220 +78,243 @@ serve(async (req) => {
     // Get user from Authorization header
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authorization header required' } }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      throw new AuthError('Authorization header required')
     }
 
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
     
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid user token' } }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      throw new AuthError('Invalid user token')
     }
 
-    const { action, code, state, refresh_token }: OAuthRequest = await req.json()
+    // Parse and validate request body
+    const requestData = await req.json().catch(() => {
+      throw new ValidationError('Invalid JSON payload')
+    })
 
-    switch (action) {
+    const oauthRequest = validateOAuthRequest(requestData)
+
+    switch (oauthRequest.action) {
       case 'initiate':
-        return handleOAuthInitiation(user.id)
+        return await googleAuthBreaker.execute(async () => {
+          const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+          const redirectUri = Deno.env.get('GOOGLE_OAUTH_REDIRECT_URI')
+
+          if (!clientId || !redirectUri) {
+            throw new Error('Missing OAuth configuration')
+          }
+
+          const state = crypto.randomUUID()
+          
+          // Store state for verification
+          await supabaseClient
+            .from('oauth_states')
+            .insert({
+              user_id: user.id,
+              state,
+              created_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
+            })
+
+          const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
+          authUrl.searchParams.set('client_id', clientId)
+          authUrl.searchParams.set('redirect_uri', redirectUri)
+          authUrl.searchParams.set('response_type', 'code')
+          authUrl.searchParams.set('scope', REQUIRED_SCOPES.join(' '))
+          authUrl.searchParams.set('access_type', 'offline')
+          authUrl.searchParams.set('state', state)
+          authUrl.searchParams.set('prompt', 'consent')
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: { auth_url: authUrl.toString() }
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200
+            }
+          )
+        })
 
       case 'callback':
-        if (!code || !state) {
+        return await googleTokenBreaker.execute(async () => {
+          // Verify state
+          const { data: storedState, error: stateError } = await supabaseClient
+            .from('oauth_states')
+            .select('state')
+            .eq('user_id', user.id)
+            .eq('state', oauthRequest.state)
+            .single()
+
+          if (stateError || !storedState) {
+            throw new ValidationError('Invalid state parameter')
+          }
+
+          // Exchange code for tokens
+          const tokens = await exchangeCodeForTokens(oauthRequest.code!)
+
+          // Encrypt tokens before storage
+          const encryptedAccessToken = await encryptToken(tokens.access_token)
+          const encryptedRefreshToken = tokens.refresh_token ? 
+            await encryptToken(tokens.refresh_token) : null
+
+          // Store the connection
+          const { error: connectionError } = await supabaseClient
+            .from('provider_connections')
+            .upsert({
+              user_id: user.id,
+              provider: 'gmail',
+              access_token: encryptedAccessToken,
+              refresh_token: encryptedRefreshToken,
+              expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+              scopes: tokens.scope.split(' '),
+              status: 'active'
+            })
+
+          if (connectionError) {
+            throw new Error(`Failed to store connection: ${connectionError.message}`)
+          }
+
+          // Clean up used state
+          await supabaseClient
+            .from('oauth_states')
+            .delete()
+            .eq('state', oauthRequest.state)
+
           return new Response(
-            JSON.stringify({ success: false, error: { code: 'MISSING_PARAMS', message: 'Code and state required' } }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({
+              success: true,
+              data: { message: 'Gmail connection established' }
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200
+            }
           )
-        }
-        return handleOAuthCallback(supabaseClient, user.id, code, state)
+        })
 
       case 'refresh':
-        if (!refresh_token) {
+        return await googleTokenBreaker.execute(async () => {
+          // Get existing connection
+          const { data: connection, error: connectionError } = await supabaseClient
+            .from('provider_connections')
+            .select('refresh_token')
+            .eq('user_id', user.id)
+            .eq('provider', 'gmail')
+            .single()
+
+          if (connectionError || !connection?.refresh_token) {
+            throw new ValidationError('No valid Gmail connection found')
+          }
+
+          // Decrypt stored refresh token
+          const decryptedRefreshToken = await decryptToken(connection.refresh_token)
+
+          // Refresh the access token
+          const tokens = await refreshAccessToken(decryptedRefreshToken)
+
+          // Encrypt new tokens
+          const encryptedAccessToken = await encryptToken(tokens.access_token)
+          const encryptedRefreshToken = tokens.refresh_token ? 
+            await encryptToken(tokens.refresh_token) : connection.refresh_token
+
+          // Update the connection
+          const { error: updateError } = await supabaseClient
+            .from('provider_connections')
+            .update({
+              access_token: encryptedAccessToken,
+              refresh_token: encryptedRefreshToken,
+              expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', user.id)
+            .eq('provider', 'gmail')
+
+          if (updateError) {
+            throw new Error(`Failed to update connection: ${updateError.message}`)
+          }
+
           return new Response(
-            JSON.stringify({ success: false, error: { code: 'MISSING_REFRESH_TOKEN', message: 'Refresh token required' } }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({
+              success: true,
+              data: { message: 'Access token refreshed' }
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200
+            }
           )
-        }
-        return handleTokenRefresh(supabaseClient, user.id, refresh_token)
+        })
 
       case 'disconnect':
-        return handleOAuthDisconnect(supabaseClient, user.id)
+        return await googleAuthBreaker.execute(async () => {
+          // Get existing connection
+          const { data: connection, error: connectionError } = await supabaseClient
+            .from('provider_connections')
+            .select('access_token')
+            .eq('user_id', user.id)
+            .eq('provider', 'gmail')
+            .single()
+
+          if (connectionError || !connection?.access_token) {
+            throw new ValidationError('No valid Gmail connection found')
+          }
+
+          // Decrypt access token
+          const decryptedAccessToken = await decryptToken(connection.access_token)
+
+          // Revoke access
+          const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${decryptedAccessToken}`, {
+            method: 'POST'
+          })
+
+          if (!response.ok) {
+            console.error('Failed to revoke token:', await response.text())
+          }
+
+          // Delete the connection
+          const { error: deleteError } = await supabaseClient
+            .from('provider_connections')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('provider', 'gmail')
+
+          if (deleteError) {
+            throw new Error(`Failed to delete connection: ${deleteError.message}`)
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: { message: 'Gmail connection removed' }
+            }),
+            {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200
+            }
+          )
+        })
 
       default:
-        return new Response(
-          JSON.stringify({ success: false, error: { code: 'INVALID_ACTION', message: 'Invalid action specified' } }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        throw new ValidationError('Invalid action specified')
     }
 
   } catch (error) {
-    console.error('OAuth Gmail Error:', error)
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: { 
-          code: 'INTERNAL_ERROR', 
-          message: 'Internal server error',
-          details: Deno.env.get('NODE_ENV') === 'development' ? error.message : undefined
-        } 
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return handleError(error, req)
   }
 })
 
-// Generate OAuth initiation URL
-function handleOAuthInitiation(userId: string) {
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID')
-  const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI')
-
-  if (!clientId || !redirectUri) {
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: { code: 'CONFIG_ERROR', message: 'OAuth configuration missing' } 
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-
-  // Generate secure state parameter
-  const state = crypto.randomUUID()
-  
-  // Store state temporarily (could use Redis in production)
-  // For now, we'll include userId in state and verify on callback
-  const stateData = {
-    userId,
-    timestamp: Date.now(),
-    nonce: crypto.randomUUID()
-  }
-  
-  const encodedState = btoa(JSON.stringify(stateData))
-
-  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
-  authUrl.searchParams.set('client_id', clientId)
-  authUrl.searchParams.set('redirect_uri', redirectUri)
-  authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('scope', REQUIRED_SCOPES.join(' '))
-  authUrl.searchParams.set('state', encodedState)
-  authUrl.searchParams.set('access_type', 'offline')
-  authUrl.searchParams.set('prompt', 'consent')
-
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: {
-        auth_url: authUrl.toString(),
-        state: encodedState
-      }
-    }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  )
-}
-
-// Handle OAuth callback and exchange code for tokens
-async function handleOAuthCallback(supabaseClient: any, userId: string, code: string, state: string) {
-  try {
-    // Verify state parameter
-    const stateData = JSON.parse(atob(state))
-    if (stateData.userId !== userId) {
-      return new Response(
-        JSON.stringify({ success: false, error: { code: 'INVALID_STATE', message: 'State parameter mismatch' } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Check state timestamp (expire after 10 minutes)
-    if (Date.now() - stateData.timestamp > 10 * 60 * 1000) {
-      return new Response(
-        JSON.stringify({ success: false, error: { code: 'EXPIRED_STATE', message: 'State parameter expired' } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Exchange code for tokens
-    const tokenResponse = await exchangeCodeForTokens(code)
-    
-    // Verify required scopes
-    const grantedScopes = tokenResponse.scope.split(' ')
-    const missingScopes = REQUIRED_SCOPES.filter(scope => !grantedScopes.includes(scope))
-    
-    if (missingScopes.length > 0) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: { 
-            code: 'INSUFFICIENT_SCOPES', 
-            message: 'Required permissions not granted',
-            details: { missing_scopes: missingScopes }
-          } 
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Get user email from Google
-    const userInfo = await getUserInfo(tokenResponse.access_token)
-
-    // Encrypt tokens before storing
-    const encryptedAccessToken = await encryptToken(tokenResponse.access_token)
-    const encryptedRefreshToken = tokenResponse.refresh_token ? await encryptToken(tokenResponse.refresh_token) : null
-
-    // Store connection in database
-    const { error: dbError } = await supabaseClient
-      .from('provider_connections')
-      .upsert({
-        user_id: userId,
-        provider: 'gmail',
-        access_token: encryptedAccessToken,
-        refresh_token: encryptedRefreshToken,
-        expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
-        scopes: grantedScopes,
-        status: 'active',
-        connected_at: new Date().toISOString()
-      }, { 
-        onConflict: 'user_id,provider' 
-      })
-
-    if (dbError) {
-      console.error('Database error:', dbError)
-      return new Response(
-        JSON.stringify({ success: false, error: { code: 'DATABASE_ERROR', message: 'Failed to store connection' } }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        data: {
-          provider: 'gmail',
-          user_email: userInfo.email,
-          scopes: grantedScopes,
-          connected_at: new Date().toISOString()
-        }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
-  } catch (error) {
-    console.error('OAuth callback error:', error)
-    return new Response(
-      JSON.stringify({ success: false, error: { code: 'CALLBACK_ERROR', message: 'OAuth callback failed' } }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-}
-
 // Exchange authorization code for access tokens
 async function exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
-  const clientId = Deno.env.get('GOOGLE_CLIENT_ID')
-  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
-  const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI')
+  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
+  const redirectUri = Deno.env.get('GOOGLE_OAUTH_REDIRECT_URI')
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('Missing OAuth configuration')
+  }
 
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -261,156 +322,79 @@ async function exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse>
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({
-      client_id: clientId!,
-      client_secret: clientSecret!,
       code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
-      redirect_uri: redirectUri!,
     }),
   })
 
   if (!response.ok) {
-    const errorData = await response.text()
-    throw new Error(`Token exchange failed: ${errorData}`)
+    const error = await response.json()
+    throw new Error(`Failed to exchange code: ${error.error_description || error.error}`)
   }
 
-  return await response.json()
+  return response.json()
 }
 
 // Refresh access token using refresh token
-async function handleTokenRefresh(supabaseClient: any, userId: string, refreshToken: string) {
-  try {
-    const clientId = Deno.env.get('GOOGLE_CLIENT_ID')
-    const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET')
+async function refreshAccessToken(refreshToken: string): Promise<GoogleTokenResponse> {
+  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
 
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: clientId!,
-        client_secret: clientSecret!,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.text()
-      throw new Error(`Token refresh failed: ${errorData}`)
-    }
-
-    const tokenData = await response.json()
-    const encryptedAccessToken = await encryptToken(tokenData.access_token)
-
-    // Update stored token
-    const { error: dbError } = await supabaseClient
-      .from('provider_connections')
-      .update({
-        access_token: encryptedAccessToken,
-        expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
-        status: 'active'
-      })
-      .eq('user_id', userId)
-      .eq('provider', 'gmail')
-
-    if (dbError) {
-      throw new Error('Failed to update token in database')
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        data: {
-          expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-        }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
-  } catch (error) {
-    console.error('Token refresh error:', error)
-    return new Response(
-      JSON.stringify({ success: false, error: { code: 'REFRESH_ERROR', message: 'Token refresh failed' } }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+  if (!clientId || !clientSecret) {
+    throw new Error('Missing OAuth configuration')
   }
-}
 
-// Disconnect Gmail integration
-async function handleOAuthDisconnect(supabaseClient: any, userId: string) {
-  try {
-    const { error: dbError } = await supabaseClient
-      .from('provider_connections')
-      .update({ status: 'revoked' })
-      .eq('user_id', userId)
-      .eq('provider', 'gmail')
-
-    if (dbError) {
-      throw new Error('Failed to disconnect provider')
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        data: { message: 'Gmail connection disconnected successfully' }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
-  } catch (error) {
-    console.error('Disconnect error:', error)
-    return new Response(
-      JSON.stringify({ success: false, error: { code: 'DISCONNECT_ERROR', message: 'Failed to disconnect' } }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-}
-
-// Get user info from Google
-async function getUserInfo(accessToken: string) {
-  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    }),
   })
 
   if (!response.ok) {
-    throw new Error('Failed to fetch user info')
+    const error = await response.json()
+    throw new Error(`Failed to refresh token: ${error.error_description || error.error}`)
   }
 
-  return await response.json()
+  return response.json()
 }
 
-// Simple token encryption (in production, use proper encryption)
-async function encryptToken(token: string): Promise<string> {
-  const encryptionKey = Deno.env.get('OAUTH_ENCRYPTION_KEY')
-  if (!encryptionKey) {
-    console.warn('No encryption key provided, storing token in plain text (development only)')
-    return token
-  }
-
-  // In production, implement proper AES encryption
-  // For now, use base64 encoding with key prefix
-  return `encrypted:${btoa(token + ':' + encryptionKey.substring(0, 8))}`
-}
-
-// Decrypt token (companion to encryptToken)
-async function decryptToken(encryptedToken: string): Promise<string> {
-  if (!encryptedToken.startsWith('encrypted:')) {
-    return encryptedToken // Plain text token (development)
-  }
-
-  const encryptionKey = Deno.env.get('OAUTH_ENCRYPTION_KEY')
-  if (!encryptionKey) {
-    throw new Error('Encryption key required to decrypt token')
-  }
-
-  // In production, implement proper AES decryption
-  const encoded = encryptedToken.replace('encrypted:', '')
-  const decoded = atob(encoded)
-  const [token] = decoded.split(':')
+// Validation schema
+const validateOAuthRequest = (data: unknown): OAuthRequest => {
+  const request = data as OAuthRequest
   
-  return token
+  if (!request.action) {
+    throw new ValidationError('Action is required')
+  }
+
+  if (!['initiate', 'callback', 'refresh', 'disconnect'].includes(request.action)) {
+    throw new ValidationError('Invalid action')
+  }
+
+  switch (request.action) {
+    case 'callback':
+      if (!request.code) {
+        throw new ValidationError('Code is required for callback action')
+      }
+      if (!request.state) {
+        throw new ValidationError('State is required for callback action')
+      }
+      break
+    case 'refresh':
+      if (!request.refresh_token) {
+        throw new ValidationError('Refresh token is required for refresh action')
+      }
+      break
+  }
+
+  return request
 } 

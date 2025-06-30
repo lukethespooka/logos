@@ -6,103 +6,147 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
-import { corsHeaders } from '../_shared/cors.ts'
+import { handleError, ValidationError, AuthError, DatabaseError } from '../_shared/error-handler.ts'
+import { checkRateLimit } from '../_shared/validation.ts'
+import { ServiceRegistry } from '../_shared/service-registry.ts'
+import { decryptToken } from '../_shared/encryption.ts'
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
+import { corsHeaders, handleCors, wrapResponse } from '../_shared/cors.ts'
 
 console.log("Starting get-tasks function...")
+console.log("Listening on http://localhost:9999/")
 
-Deno.serve(async (req) => {
-  // This is needed if you're planning to invoke your function from a browser.
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+// Initialize service registry
+const registry = ServiceRegistry.getInstance()
 
+// Initialize circuit breaker for task fetching
+const taskBreaker = registry.registerService({
+  name: 'task-fetch',
+  failureThreshold: 3,
+  resetTimeout: 30000
+})
+
+interface TaskFilters {
+  status?: ('pending' | 'in_progress' | 'completed' | 'archived')[]
+  priority?: ('low' | 'medium' | 'high')[]
+  due_date_start?: string
+  due_date_end?: string
+  tags?: string[]
+  search?: string
+  parent_id?: string | null
+  provider?: string
+  limit?: number
+  offset?: number
+}
+
+interface Env {
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+}
+
+declare const Deno: {
+  env: {
+    get(key: keyof Env): string | undefined;
+  };
+};
+
+serve(async (req) => {
   try {
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      throw new Error('No authorization header')
+    // Handle CORS preflight
+    const corsResponse = await handleCors(req);
+    if (corsResponse) return corsResponse;
+
+    // Validate request method
+    if (req.method !== 'POST') {
+      throw new ValidationError('Method not allowed', { allowedMethods: ['POST'] })
     }
 
-    // Log the token format (without exposing the actual token)
-    console.log("Auth header format:", authHeader.startsWith('Bearer ') ? 'Bearer token present' : 'Invalid format')
+    // Extract token from Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AuthError('Missing or invalid authorization header');
+    }
 
-    // Create a Supabase client with the Auth context of the function
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: authHeader },
-        },
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-        },
+    const token = authHeader.split(' ')[1];
+
+    // Initialize Supabase client with service role key
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        flowType: 'pkce'
       }
-    )
-
-    // Get the user from the auth context
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    });
     
+    // Verify token using JWT verification
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError) {
-      console.error("User error:", userError.message)
-      // Check if it's a session error
-      if (userError.message.includes('session')) {
-        return new Response(
-          JSON.stringify({ error: 'Session invalid or expired' }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 401,
-          }
-        )
-      }
-      throw userError
+      console.error('Auth error:', userError);
+      throw new AuthError('Invalid token');
     }
 
-    if (!user) {
-      console.error("No user found")
-      return new Response(
-        JSON.stringify({ error: 'Not authenticated' }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 401,
-        }
-      )
-    }
+    // Extract user ID from the JWT claims
+    const userId = user.id;
 
-    console.log("Fetching tasks for user:", user.id)
+    // Parse request body for filters
+    const { project_id, tag_ids, urgency, completed, due_date_start, due_date_end } = await req.json();
 
-    // Get tasks for the authenticated user
-    const { data: tasks, error: tasksError } = await supabaseClient
+    // Query tasks with filters
+    let query = supabase
       .from('tasks')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('completed_at', { ascending: true, nullsFirst: true })
-      .order('created_at', { ascending: false })
+      .select(`
+        *,
+        project:projects(name),
+        tags:task_tags(tag:tags(name))
+      `)
+      .eq('user_id', userId);
 
-    if (tasksError) {
-      console.error("Tasks error:", tasksError.message)
-      throw tasksError
+    // Apply filters
+    if (project_id) query = query.eq('project_id', project_id);
+    if (urgency) query = query.eq('urgency', urgency);
+    if (completed !== undefined) query = query.is('completed_at', completed ? 'NOT NULL' : 'NULL');
+    if (due_date_start) query = query.gte('due_date', due_date_start);
+    if (due_date_end) query = query.lte('due_date', due_date_end);
+    if (tag_ids?.length) {
+      query = query.in('id', supabase
+        .from('task_tags')
+        .select('task_id')
+        .in('tag_id', tag_ids)
+      );
     }
 
-    console.log("Found tasks:", tasks?.length ?? 0)
+    // Execute query
+    const { data: tasks, error: dbError } = await query;
 
-    return new Response(
-      JSON.stringify(tasks),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
-    )
+    if (dbError) {
+      console.error('Database error:', dbError);
+      throw new DatabaseError('Failed to fetch tasks');
+    }
+
+    // Return the tasks with CORS headers
+    return wrapResponse(new Response(
+      JSON.stringify({
+        success: true,
+        data: tasks
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    ));
   } catch (error) {
-    console.error("Error in get-tasks:", error.message)
-    return new Response(
-      JSON.stringify({ error: error.message }),
+    console.error('Function error:', error)
+    const errorResponse = await handleError(error)
+    return wrapResponse(new Response(
+      JSON.stringify({
+        success: false,
+        error: errorResponse.body
+      }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: error.message.includes('authenticated') || error.message.includes('session') ? 401 : 400,
-      },
-    )
+        status: errorResponse.status,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    ));
   }
 })
 

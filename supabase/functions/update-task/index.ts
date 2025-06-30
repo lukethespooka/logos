@@ -1,109 +1,161 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { serve } from 'std/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { handleError, ValidationError } from '../_shared/error-handler.ts';
+import { validateSchema, checkRateLimit, SchemaValidation } from '../_shared/validation.ts';
+import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+interface Env {
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+}
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+declare const Deno: {
+  env: {
+    get(key: keyof Env): string | undefined;
+  };
+};
+
+interface UpdateTaskRequest {
+  id: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: number;
+  due_date?: string;
+  tags?: string[];
+}
+
+// Update task schema
+const updateTaskSchema: SchemaValidation = {
+  type: 'object',
+  required: true,
+  properties: {
+    id: {
+      type: 'string',
+      required: true,
+      custom: (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    },
+    title: {
+      type: 'string',
+      required: false,
+      minLength: 1,
+      maxLength: 200
+    },
+    description: {
+      type: 'string',
+      required: false,
+      maxLength: 2000
+    },
+    status: {
+      type: 'string',
+      required: false,
+      enum: ['pending', 'in_progress', 'completed', 'archived']
+    },
+    priority: {
+      type: 'number',
+      required: false,
+      min: 1,
+      max: 5
+    },
+    due_date: {
+      type: 'date',
+      required: false
+    },
+    tags: {
+      type: 'array',
+      required: false,
+      maxLength: 10,
+      items: {
+        type: 'string',
+        maxLength: 50
+      }
+    }
   }
+} as const;
 
+serve(async (req) => {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    // Get user from JWT token
-    const authHeader = req.headers.get('Authorization')!;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    // Handle CORS
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders });
     }
 
-    // Parse request body
-    const { task_id, title, description, urgency, due_date } = await req.json();
-
-    // Validate required fields
-    if (!task_id) {
-      return new Response(
-        JSON.stringify({ error: 'Task ID is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    // Validate request method
+    if (req.method !== 'PATCH') {
+      throw new ValidationError('Method not allowed', { allowedMethods: ['PATCH'] });
     }
 
-    if (!title || !title.trim()) {
-      return new Response(
-        JSON.stringify({ error: 'Title is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    // Get user ID from auth header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new ValidationError('Missing authorization header');
+    }
+    const userId = authHeader.replace('Bearer ', '');
+
+    // Rate limiting
+    checkRateLimit(`update-task:${userId}`, {
+      windowMs: 60 * 1000,  // 1 minute
+      maxRequests: 20,      // 20 requests per minute
+      message: 'Too many task update attempts. Please try again later.'
+    });
+
+    // Parse and validate request body
+    const data: UpdateTaskRequest = await req.json();
+    validateSchema(data, updateTaskSchema, [], { stripUnknown: true });
+
+    // Initialize Supabase client
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: {
+          persistSession: false,
+        },
+      }
+    );
+
+    // Verify task ownership
+    const { data: existingTask, error: fetchError } = await supabaseClient
+      .from('tasks')
+      .select('user_id')
+      .eq('id', data.id)
+      .single();
+
+    if (fetchError) {
+      throw new ValidationError('Task not found');
     }
 
-    // Update the task
-    const { data: task, error: updateError } = await supabase
+    if (existingTask.user_id !== userId) {
+      throw new ValidationError('Unauthorized to update this task');
+    }
+
+    // Update task
+    const { data: updatedTask, error: updateError } = await supabaseClient
       .from('tasks')
       .update({
-        title: title.trim(),
-        description: description?.trim() || null,
-        urgency: urgency || 'Medium',
-        due_date: due_date ? new Date(due_date).toISOString() : null,
+        ...data,
         updated_at: new Date().toISOString()
       })
-      .eq('id', task_id)
-      .eq('user_id', user.id) // Ensure user can only update their own tasks
+      .eq('id', data.id)
       .select()
       .single();
 
     if (updateError) {
-      console.error('Error updating task:', updateError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to update task' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    if (!task) {
-      return new Response(
-        JSON.stringify({ error: 'Task not found or access denied' }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+      throw updateError;
     }
 
     return new Response(
-      JSON.stringify(task),
+      JSON.stringify({
+        success: true,
+        data: updatedTask
+      }),
       {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200
       }
     );
 
   } catch (error) {
-    console.error('Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
+    return handleError(error, req);
   }
 }); 

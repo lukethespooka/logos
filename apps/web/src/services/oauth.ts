@@ -330,7 +330,13 @@ class OAuthServiceImpl implements OAuthService {
       const initiateResult = await this.initiateConnection(provider)
       
       if (!initiateResult.success || !initiateResult.data) {
-        return initiateResult as ApiResponse<OAuthCallbackResponse>
+        return {
+          success: false,
+          error: initiateResult.error || {
+            code: 'INITIATE_FAILED',
+            message: 'Failed to initiate OAuth connection'
+          }
+        }
       }
 
       const { auth_url, state } = initiateResult.data

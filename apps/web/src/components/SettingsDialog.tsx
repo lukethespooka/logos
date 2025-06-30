@@ -98,7 +98,7 @@ export function SettingsDialog() {
       </button>
       
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className={`${hasAnyProviderIntegrations ? 'sm:max-w-[500px]' : 'sm:max-w-[425px]'}`}>
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -106,7 +106,7 @@ export function SettingsDialog() {
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="timer">
-          <TabsList className={`grid w-full ${hasAnyProviderIntegrations ? 'grid-cols-7' : 'grid-cols-6'}`}>
+          <TabsList className={`grid w-full gap-1 ${hasAnyProviderIntegrations ? 'grid-cols-7 text-xs' : 'grid-cols-6 text-sm'}`}>
             <TabsTrigger value="timer">Timer</TabsTrigger>
             <TabsTrigger value="notifications">Notify</TabsTrigger>
             <TabsTrigger value="appearance">Theme</TabsTrigger>

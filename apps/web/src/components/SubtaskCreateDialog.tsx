@@ -1,18 +1,22 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/useToast";
+import { cn } from "@/lib/utils";
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+}
 
 interface SubtaskCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  parentTask: {
-    id: string;
-    title: string;
-  } | null;
+  parentTask: Task | null;
   onSubtaskCreate: (subtaskData: {
     title: string;
     description: string;
@@ -20,36 +24,66 @@ interface SubtaskCreateDialogProps {
   }) => Promise<void>;
 }
 
-export function SubtaskCreateDialog({ 
-  open, 
-  onOpenChange, 
-  parentTask, 
-  onSubtaskCreate 
+interface FormErrors {
+  title?: string;
+  description?: string;
+}
+
+export function SubtaskCreateDialog({
+  open,
+  onOpenChange,
+  parentTask,
+  onSubtaskCreate
 }: SubtaskCreateDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const validateForm = () => {
+    const newErrors: FormErrors = {};
+
+    if (!title.trim()) {
+      newErrors.title = "Title is required";
+    } else if (title.length > 100) {
+      newErrors.title = "Title must be less than 100 characters";
+    }
+
+    if (!description.trim()) {
+      newErrors.description = "Description is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!title.trim() || !parentTask) return;
+
+    if (!parentTask || !validateForm()) {
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      
       await onSubtaskCreate({
         title: title.trim(),
-        description: description.trim() || "",
+        description: description.trim(),
         parent_task_id: parentTask.id
       });
 
       // Reset form
       setTitle("");
       setDescription("");
+      setErrors({});
       onOpenChange(false);
     } catch (error) {
-      console.error("Failed to create subtask:", error);
+      toast({
+        type: 'error',
+        title: "Error creating subtask",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -57,59 +91,57 @@ export function SubtaskCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" />
-            Add Subtask
-          </DialogTitle>
-          <DialogDescription>
-            Create a subtask under "{parentTask?.title}". Subtasks inherit the parent's priority level.
-          </DialogDescription>
+          <DialogTitle>Add Subtask to "{parentTask?.title}"</DialogTitle>
         </DialogHeader>
-        
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Subtask Title */}
           <div className="space-y-2">
-            <Label htmlFor="subtask-title">Subtask Title *</Label>
+            <Label htmlFor="title">Title</Label>
             <Input
-              id="subtask-title"
+              id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="What needs to be done?"
-              className="text-base"
-              autoFocus
+              className={cn(errors.title && "border-destructive")}
+              disabled={isSubmitting}
+              aria-invalid={!!errors.title}
+              aria-describedby={errors.title ? "title-error" : undefined}
             />
+            {errors.title && (
+              <p id="title-error" className="text-sm text-destructive">
+                {errors.title}
+              </p>
+            )}
           </div>
 
-          {/* Subtask Description */}
           <div className="space-y-2">
-            <Label htmlFor="subtask-description">Description</Label>
+            <Label htmlFor="description">Description</Label>
             <Textarea
-              id="subtask-description"
+              id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add more details... (optional)"
-              className="min-h-[60px] resize-none"
+              className={cn(errors.description && "border-destructive")}
+              disabled={isSubmitting}
+              aria-invalid={!!errors.description}
+              aria-describedby={errors.description ? "description-error" : undefined}
             />
+            {errors.description && (
+              <p id="description-error" className="text-sm text-destructive">
+                {errors.description}
+              </p>
+            )}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="flex-1"
               disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={!title.trim() || isSubmitting}
-              className="flex-1"
-            >
+            <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Creating..." : "Create Subtask"}
             </Button>
           </div>

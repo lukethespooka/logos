@@ -17,6 +17,7 @@ import { Home, Layout } from "lucide-react";
 import { Breadcrumb } from "./components/ui/breadcrumb";
 import { QuickNavDock } from "./components/QuickNavDock";
 import { FeatureFlagDebugger } from "./components/FeatureFlagDebugger";
+import { EmailTriageDemo } from "./components/EmailTriageDemo";
 
 const queryClient = new QueryClient();
 
@@ -180,9 +181,10 @@ function Dashboard() {
           </div>
         </div>
         
-        {/* Development Feature Flag Debugger */}
+        {/* Development Tools */}
         {import.meta.env.DEV && (
-          <div className="mt-8">
+          <div className="mt-8 space-y-6">
+            <EmailTriageDemo />
             <FeatureFlagDebugger />
           </div>
         )}

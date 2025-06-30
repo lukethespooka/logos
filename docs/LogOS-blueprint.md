@@ -154,6 +154,7 @@ These are the AI agents that **run inside LogOS** to help end-users with product
 | **AI Task Planner** | Breaks large goals into bite‑sized, deadline‑aware tasks; auto‑prioritises daily queue. | `TaskBot`, `FocusCoach`, `DeadlineSentry` | Smart Task Overview widget + "Plan My Day" button |
 | **AI Project Manager** | Tracks project health, Gantt‑style timelines, prompts for blockers, auto‑updates status. | `ProjectTracker`, `RiskRadar`, `ProgressReporter` | Kanban board overlay + weekly digest |
 | **AI Calendar & Scheduling** | Finds optimal meeting slots, resolves conflicts, inserts focus blocks. | `CalendarGenie`, `ConflictResolver` | Modal picker embedded in Upcoming Schedule |
+| **AI Location & Weather** | Analyzes location context, suggests weather-aware scheduling, provides travel insights. | `LocationBot`, `WeatherAdvisor`, `TravelPlanner` | Map widget + weather overlay in Calendar |
 | **AI Meeting Notetaker** | Records & transcribes calls, summarises action items, pushes them to tasks & inbox. | `TranscribeBot`, `ActionExtractor` | Inline transcript viewer + "Send to Tasks" chips |
 | **AI Docs & Notes** | Structured note templates, backlinks, embeds tasks, auto‑tags for search. | `DocsAI`, `Tagger`, `LinkWeaver` | Notion‑style editor pane |
 | **AI Writer & Editor** | Drafts emails, briefs, social posts; rewrites tone; grammar & clarity passes. | `WriteAssist`, `ToneShifter`, `Proofreader` | Composer sidebar & inline edit pop‑over |

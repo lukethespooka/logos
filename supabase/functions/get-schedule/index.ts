@@ -6,74 +6,137 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7"
-import { corsHeaders } from '../_shared/cors.ts'
+import { handleError, ValidationError, AuthError, DatabaseError } from '../_shared/error-handler.ts'
+import { checkRateLimit } from '../_shared/validation.ts'
+import { ServiceRegistry } from '../_shared/service-registry.ts'
+import { decryptToken } from '../_shared/encryption.ts'
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
+import { corsHeaders, handleCors, wrapResponse } from '../_shared/cors.ts'
 
 console.log("Starting get-schedule function...")
+console.log("Listening on http://localhost:9999/")
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+// Initialize service registry
+const registry = ServiceRegistry.getInstance()
 
+// Initialize circuit breaker for schedule fetching
+const scheduleBreaker = registry.registerService({
+  name: 'schedule-fetch',
+  failureThreshold: 3,
+  resetTimeout: 30000
+})
+
+interface ScheduleFilters {
+  start_date?: string
+  end_date?: string
+  providers?: string[]
+  include_tasks?: boolean
+  include_completed?: boolean
+  limit?: number
+  offset?: number
+}
+
+interface Env {
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+}
+
+declare const Deno: {
+  env: {
+    get(key: keyof Env): string | undefined;
+  };
+};
+
+serve(async (req) => {
   try {
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      throw new Error('No authorization header')
+    // Handle CORS preflight
+    const corsResponse = await handleCors(req);
+    if (corsResponse) return corsResponse;
+
+    // Validate request method
+    if (req.method !== 'POST') {
+      throw new ValidationError('Method not allowed', { allowedMethods: ['POST'] })
     }
 
-    // Create a Supabase client with the Auth context of the function
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: authHeader },
-        },
+    // Extract token from Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AuthError('Missing or invalid authorization header');
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    // Initialize Supabase client with service role key
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        flowType: 'pkce'
       }
-    )
+    });
+    
+    // Verify token using JWT verification
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError) {
+      console.error('Auth error:', userError);
+      throw new AuthError('Invalid authorization token');
+    }
 
-    // Get the user from the auth context
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    if (userError) throw userError
-    if (!user) throw new Error('Not authenticated')
+    // Extract user ID from the JWT claims
+    const userId = user.id;
 
-    console.log("Fetching schedule for user:", user.id)
+    // Parse request body for filters
+    const { start_date, end_date, providers, include_tasks, include_completed, limit, offset } = await req.json();
 
-    const now = new Date();
-    const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    try {
+      // Call the database function with the correct parameters
+      const { data: scheduleItems, error: dbError } = await supabase
+        .rpc('get_user_schedule', {
+          p_user_id: userId,
+          p_start_date: start_date,
+          p_end_date: end_date,
+          p_providers: providers,
+          p_include_tasks: include_tasks,
+          p_include_completed: include_completed,
+          p_limit: limit,
+          p_offset: offset
+        });
 
-    // Get schedule items for the authenticated user
-    const { data: scheduleItems, error: scheduleError } = await supabaseClient
-      .from('schedule_items')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('start_time', now.toISOString())
-      .lte('start_time', in24Hours.toISOString())
-      .order('start_time', { ascending: true });
+      if (dbError) {
+        console.error('Schedule error:', dbError);
+        throw new DatabaseError('Failed to fetch schedule');
+      }
 
-    if (scheduleError) throw scheduleError
-
-    console.log("Found schedule items:", scheduleItems?.length ?? 0)
-
-    return new Response(
-      JSON.stringify(scheduleItems),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
-    )
+      // Return the schedule items with CORS headers
+      return wrapResponse(new Response(
+        JSON.stringify({
+          success: true,
+          data: scheduleItems
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      ));
+    } catch (error) {
+      console.error('Schedule error:', error);
+      throw new DatabaseError('Failed to fetch schedule: ' + error.message);
+    }
   } catch (error) {
-    console.error("Error in get-schedule:", error.message)
-    return new Response(
-      JSON.stringify({ error: error.message }),
+    console.error('Function error:', error);
+    const errorResponse = await handleError(error);
+    return wrapResponse(new Response(
+      JSON.stringify({
+        success: false,
+        error: errorResponse.body
+      }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: error.message === 'Not authenticated' ? 401 : 400,
-      },
-    )
+        status: errorResponse.status,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    ));
   }
-})
+});
 
 /* To invoke locally:
 

@@ -75,8 +75,8 @@ export function ProviderConnectionsDialog({
 }: ProviderConnectionsDialogProps) {
   const { isEmailIntegrationEnabled, isCalendarIntegrationEnabled } = useFeatureFlags()
   const [connections, setConnections] = useState<ProviderConnection[]>([])
-  const [loadingStates, setLoadingStates] = useState<Record<ProviderType, boolean>>({})
-  const [errors, setErrors] = useState<Record<ProviderType, string>>({})
+  const [loadingStates, setLoadingStates] = useState<Record<ProviderType, boolean>>({} as Record<ProviderType, boolean>)
+  const [errors, setErrors] = useState<Record<ProviderType, string>>({} as Record<ProviderType, string>)
   const [isLoading, setIsLoading] = useState(true)
 
   const availableProviders = PROVIDERS.map(provider => ({

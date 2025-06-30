@@ -30,6 +30,20 @@ This document defines the required quality checks for all features in LogOS. It 
 - [ ] Include accessibility features
 - [ ] Follow Tailwind utility patterns
 
+### Backend Security & Validation
+- [ ] Use shared validation utility (`_shared/validation.ts`) for all inputs
+- [ ] Implement rate limiting per endpoint specifications
+- [ ] Add input sanitization for all string inputs
+- [ ] Use shared error handler with standard error codes
+- [ ] Implement circuit breakers for external service calls
+- [ ] Add request correlation IDs for tracing
+- [ ] Verify JWT authentication and ownership checks
+- [ ] Log all errors with correlation IDs
+- [ ] Follow standard error response format
+- [ ] Test validation edge cases
+- [ ] Verify rate limiting thresholds
+- [ ] Test circuit breaker fallbacks
+
 ### Error Handling
 - [ ] Implement error boundaries around feature
 - [ ] Add retry logic for network requests

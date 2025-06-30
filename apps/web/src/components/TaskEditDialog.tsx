@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CalendarDays, Tag, Edit3, Trash2, AlertTriangle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SubtaskCreateDialog } from "@/components/SubtaskCreateDialog";
+import { useToast } from "@/hooks/useToast";
 
 interface Task {
   id: string;
@@ -39,6 +40,13 @@ interface TaskEditDialogProps {
   }) => Promise<void>;
 }
 
+interface FormErrors {
+  title?: string;
+  description?: string;
+  urgency?: string;
+  due_date?: string;
+}
+
 export function TaskEditDialog({ 
   open, 
   onOpenChange, 
@@ -55,6 +63,8 @@ export function TaskEditDialog({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showSubtaskDialog, setShowSubtaskDialog] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const { toast } = useToast();
 
   const urgencyOptions: Array<{ value: "High" | "Medium" | "Low"; label: string; icon: string }> = [
     { value: "High", label: "High Priority", icon: "🔥" },
@@ -70,13 +80,46 @@ export function TaskEditDialog({
       setUrgency(task.urgency);
       setDueDate(task.due_date ? task.due_date.split('T')[0] : "");
       setShowDeleteConfirm(false);
+      setErrors({});
     }
   }, [task]);
+
+  const validateForm = () => {
+    const newErrors: FormErrors = {};
+
+    if (!title.trim()) {
+      newErrors.title = "Title is required";
+    } else if (title.length > 100) {
+      newErrors.title = "Title must be less than 100 characters";
+    }
+
+    if (!description.trim()) {
+      newErrors.description = "Description is required";
+    }
+
+    if (!urgency) {
+      newErrors.urgency = "Urgency is required";
+    }
+
+    if (dueDate) {
+      const dueDateObj = new Date(dueDate);
+      if (isNaN(dueDateObj.getTime())) {
+        newErrors.due_date = "Invalid date format";
+      } else if (dueDateObj < new Date()) {
+        newErrors.due_date = "Due date cannot be in the past";
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    if (!title.trim() || !task) return;
+    if (!task || !validateForm()) {
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -88,9 +131,14 @@ export function TaskEditDialog({
         due_date: dueDate || undefined
       });
 
+      setErrors({});
       onOpenChange(false);
     } catch (error) {
-      console.error("Failed to update task:", error);
+      toast({
+        type: 'error',
+        title: "Error updating task",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -104,7 +152,11 @@ export function TaskEditDialog({
       await onTaskDelete(task.id);
       onOpenChange(false);
     } catch (error) {
-      console.error("Failed to delete task:", error);
+      toast({
+        type: 'error',
+        title: "Error deleting task",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
@@ -154,9 +206,17 @@ export function TaskEditDialog({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="What needs to be done?"
-                className="text-base"
+                className={cn(errors.title && "border-destructive")}
                 autoFocus
+                disabled={isSubmitting}
+                aria-invalid={!!errors.title}
+                aria-describedby={errors.title ? "title-error" : undefined}
               />
+              {errors.title && (
+                <p id="title-error" className="text-sm text-destructive">
+                  {errors.title}
+                </p>
+              )}
             </div>
 
             {/* Task Description */}
@@ -167,8 +227,16 @@ export function TaskEditDialog({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add more details... (optional)"
-                className="min-h-[80px] resize-none"
+                className={cn(errors.description && "border-destructive")}
+                disabled={isSubmitting}
+                aria-invalid={!!errors.description}
+                aria-describedby={errors.description ? "description-error" : undefined}
               />
+              {errors.description && (
+                <p id="description-error" className="text-sm text-destructive">
+                  {errors.description}
+                </p>
+              )}
             </div>
 
             {/* Priority Selection */}
@@ -210,7 +278,10 @@ export function TaskEditDialog({
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="text-sm"
+                  className={cn(errors.due_date && "border-destructive")}
+                  disabled={isSubmitting}
+                  aria-invalid={!!errors.due_date}
+                  aria-describedby={errors.due_date ? "due-date-error" : undefined}
                 />
                 <div className="flex gap-2">
                   <Button
@@ -244,6 +315,11 @@ export function TaskEditDialog({
                   )}
                 </div>
               </div>
+              {errors.due_date && (
+                <p id="due-date-error" className="text-sm text-destructive">
+                  {errors.due_date}
+                </p>
+              )}
             </div>
 
             {/* Action Buttons */}

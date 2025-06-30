@@ -1,89 +1,126 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { serve } from 'std/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { handleError, ValidationError } from '../_shared/error-handler.ts';
+import { validateSchema, checkRateLimit, SchemaValidation } from '../_shared/validation.ts';
+import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+interface Env {
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+}
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+declare const Deno: {
+  env: {
+    get(key: keyof Env): string | undefined;
+  };
+};
+
+// Task creation schema
+const createTaskSchema: SchemaValidation = {
+  type: 'object',
+  required: true,
+  properties: {
+    title: {
+      type: 'string',
+      required: true,
+      minLength: 1,
+      maxLength: 200
+    },
+    description: {
+      type: 'string',
+      required: false,
+      maxLength: 2000
+    },
+    due_date: {
+      type: 'date',
+      required: false
+    },
+    priority: {
+      type: 'number',
+      required: false,
+      min: 1,
+      max: 5
+    },
+    tags: {
+      type: 'array',
+      required: false,
+      maxLength: 10,
+      items: {
+        type: 'string',
+        maxLength: 50
+      }
+    }
   }
+} as const;
 
+serve(async (req) => {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    // Get user from JWT token
-    const authHeader = req.headers.get('Authorization')!;
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    // Handle CORS
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders });
     }
 
-    // Parse request body
-    const { title, description, urgency, due_date } = await req.json();
-
-    // Validate required fields
-    if (!title || !title.trim()) {
-      return new Response(
-        JSON.stringify({ error: 'Title is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    // Validate request method
+    if (req.method !== 'POST') {
+      throw new ValidationError('Method not allowed', { allowedMethods: ['POST'] });
     }
 
-    // Create the task
-    const { data: task, error: insertError } = await supabase
+    // Get request data
+    const data = await req.json();
+
+    // Get user ID from auth header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new ValidationError('Missing authorization header');
+    }
+    const userId = authHeader.replace('Bearer ', '');
+
+    // Rate limiting
+    checkRateLimit(`create-task:${userId}`, {
+      windowMs: 60 * 1000,  // 1 minute
+      maxRequests: 10,      // 10 requests per minute
+      message: 'Too many task creation attempts. Please try again later.'
+    });
+
+    // Validate request body
+    validateSchema(data, createTaskSchema, [], { stripUnknown: true });
+
+    // Initialize Supabase client
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: {
+          persistSession: false,
+        },
+      }
+    );
+
+    // Create task
+    const { data: task, error } = await supabaseClient
       .from('tasks')
       .insert({
-        user_id: user.id,
-        title: title.trim(),
-        description: description?.trim() || null,
-        urgency: urgency || 'Medium',
-        due_date: due_date ? new Date(due_date).toISOString() : null,
-        created_at: new Date().toISOString(),
-        completed_at: null
+        ...data,
+        user_id: userId,
+        status: 'pending',
+        created_at: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (insertError) {
-      console.error('Error creating task:', insertError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create task' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+    if (error) {
+      throw error;
     }
 
     return new Response(
-      JSON.stringify(task),
+      JSON.stringify({ success: true, data: task }),
       {
-        status: 201,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 201
       }
     );
 
   } catch (error) {
-    console.error('Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      }
-    );
+    return handleError(error, req);
   }
 }); 

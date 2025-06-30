@@ -3,10 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
 import { Textarea } from "@/components/ui/textarea";
 import { CalendarDays, Tag, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/useToast";
 
 interface TaskCreateDialogProps {
   open: boolean;
@@ -19,12 +19,53 @@ interface TaskCreateDialogProps {
   }) => Promise<void>;
 }
 
+interface FormErrors {
+  title?: string;
+  description?: string;
+  urgency?: string;
+  due_date?: string;
+}
+
 export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreateDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [urgency, setUrgency] = useState<"High" | "Medium" | "Low">("Medium");
   const [dueDate, setDueDate] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [isValid, setIsValid] = useState(false);
+  const { toast } = useToast();
+
+  // Validate form whenever inputs change
+  useEffect(() => {
+    const newErrors: FormErrors = {};
+
+    if (!title.trim()) {
+      newErrors.title = "Title is required";
+    } else if (title.length > 100) {
+      newErrors.title = "Title must be less than 100 characters";
+    }
+
+    if (!description.trim()) {
+      newErrors.description = "Description is required";
+    }
+
+    if (!urgency) {
+      newErrors.urgency = "Urgency is required";
+    }
+
+    if (dueDate) {
+      const dueDateObj = new Date(dueDate);
+      if (isNaN(dueDateObj.getTime())) {
+        newErrors.due_date = "Invalid date format";
+      } else if (dueDateObj < new Date()) {
+        newErrors.due_date = "Due date cannot be in the past";
+      }
+    }
+
+    setErrors(newErrors);
+    setIsValid(Object.keys(newErrors).length === 0);
+  }, [title, description, urgency, dueDate]);
 
   // Handle escape key to close dialog
   useEffect(() => {
@@ -46,17 +87,18 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
     { value: "Low", label: "Low Priority", icon: "🌙" }
   ];
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!title.trim()) return;
+
+    if (!isValid) {
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      
       await onTaskCreate({
         title: title.trim(),
-        description: description.trim() || "",
+        description: description.trim(),
         urgency,
         due_date: dueDate || undefined
       });
@@ -66,9 +108,14 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
       setDescription("");
       setUrgency("Medium");
       setDueDate("");
+      setErrors({});
       onOpenChange(false);
     } catch (error) {
-      console.error("Failed to create task:", error);
+      toast({
+        type: 'error',
+        title: "Error creating task",
+        description: error instanceof Error ? error.message : "Please try again"
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -108,9 +155,17 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs to be done?"
-              className="text-base"
+              className={cn(errors.title && "border-destructive")}
               autoFocus
+              disabled={isSubmitting}
+              aria-invalid={!!errors.title}
+              aria-describedby={errors.title ? "title-error" : undefined}
             />
+            {errors.title && (
+              <p id="title-error" className="text-sm text-destructive">
+                {errors.title}
+              </p>
+            )}
           </div>
 
           {/* Task Description */}
@@ -121,8 +176,16 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add more details... (optional)"
-              className="min-h-[80px] resize-none"
+              className={cn(errors.description && "border-destructive")}
+              disabled={isSubmitting}
+              aria-invalid={!!errors.description}
+              aria-describedby={errors.description ? "description-error" : undefined}
             />
+            {errors.description && (
+              <p id="description-error" className="text-sm text-destructive">
+                {errors.description}
+              </p>
+            )}
           </div>
 
           {/* Priority Selection */}
@@ -164,7 +227,10 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
-                className="text-sm"
+                className={cn(errors.due_date && "border-destructive")}
+                disabled={isSubmitting}
+                aria-invalid={!!errors.due_date}
+                aria-describedby={errors.due_date ? "due-date-error" : undefined}
               />
               <div className="flex gap-2">
                 <Button
@@ -173,6 +239,7 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
                   size="sm"
                   onClick={() => setDueDate(getTomorrowDate())}
                   className="text-xs"
+                  disabled={isSubmitting}
                 >
                   Tomorrow
                 </Button>
@@ -182,6 +249,7 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
                   size="sm"
                   onClick={() => setDueDate(getNextWeekDate())}
                   className="text-xs"
+                  disabled={isSubmitting}
                 >
                   Next Week
                 </Button>
@@ -192,12 +260,18 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
                     size="sm"
                     onClick={() => setDueDate("")}
                     className="text-xs text-muted-foreground"
+                    disabled={isSubmitting}
                   >
                     Clear
                   </Button>
                 )}
               </div>
             </div>
+            {errors.due_date && (
+              <p id="due-date-error" className="text-sm text-destructive">
+                {errors.due_date}
+              </p>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -213,7 +287,7 @@ export function TaskCreateDialog({ open, onOpenChange, onTaskCreate }: TaskCreat
             </Button>
             <Button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!isValid || isSubmitting}
               className="flex-1"
             >
               {isSubmitting ? "Creating..." : "Create Task"}

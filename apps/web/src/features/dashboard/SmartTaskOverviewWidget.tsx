@@ -4,31 +4,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import React, { useState, useRef, useEffect, useImperativeHandle, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useImperativeHandle, useMemo, useCallback, forwardRef } from "react";
 import { soundManager } from "@/lib/sounds";
 import { createConfettiEffect, createSparkleEffect, addGlowEffect, animations } from "@/lib/animations";
 import { GripVertical, Sparkles, Plus, Calendar, Edit3, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TaskCreateDialog } from "@/components/TaskCreateDialog";
 import { TaskEditDialog } from "@/components/TaskEditDialog";
-import { TaskSearchFilter, TaskFilters } from "@/components/TaskSearchFilter";
+import { TaskSearchFilter } from "@/components/TaskSearchFilter";
 import { PlusButton } from "@/components/ui/plus-button";
+import { WidgetLoading } from '@/components/ui/widget-loading';
+import { OfflineFallback } from '@/components/ui/offline-fallback';
+import { Button } from '@/components/ui/button';
+import { SubtaskCreateDialog } from "@/components/SubtaskCreateDialog";
+import { Task, TaskFilters } from '@/types/task';
 
-interface Task {
-  id: string;
-  title: string;
-  description: string | null;
-  urgency: "High" | "Medium" | "Low";
-  completed_at: string | null;
-  due_date?: string | null;
-  sort_order?: number;
-  parent_task_id?: string | null;
-  level: number;
-  subtasks?: Task[];
+interface SmartTaskOverviewWidgetProps {
+  className?: string;
 }
 
-export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () => void }>((props, ref) => {
-  const { signIn } = useAuth();
+export const SmartTaskOverviewWidget = forwardRef<
+  { openCreateDialog: () => void },
+  SmartTaskOverviewWidgetProps
+>((props, ref) => {
+  const { signIn, session } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
@@ -39,11 +38,15 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<TaskFilters>({
-    search: "",
+    search: '',
     urgency: [],
-    status: [],
-    overdue: false
+    status: ['active'],
+    overdue: false,
   });
+  const [isSubtaskDialogOpen, setIsSubtaskDialogOpen] = useState(false);
+  const [selectedParentTask, setSelectedParentTask] = useState<Task | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   
   // Refs for celebration effects
   const taskRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -60,70 +63,58 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     openCreateDialog: () => setIsCreateDialogOpen(true)
   }));
 
-  const { data: tasksData, isLoading: isTasksLoading, error, refetch } = useQuery<Task[], Error>({
-    queryKey: ["tasks"],
-    queryFn: async (): Promise<Task[]> => {
-      let retryCount = 0;
-      const maxRetries = 2;
+  const fetchTasks = async () => {
+    try {
+      if (!session?.access_token) {
+        throw new Error('No access token available');
+      }
 
-      while (retryCount <= maxRetries) {
-        try {
-          const accessToken = await getAccessToken();
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-tasks`,
-            {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          );
+      setIsLoading(true);
+      setError(null);
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            if (response.status === 401 && retryCount < maxRetries) {
-              await signIn();
-              retryCount++;
-              continue;
-            }
-            throw new Error(errorData.error || "Failed to fetch tasks");
-          }
-
-          const data = await response.json();
-          return data;
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
-            await signIn();
-            retryCount++;
-            continue;
-          }
-          throw error;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-tasks`,
+        {
+          method: "POST",
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            include_completed: filters.status.includes("completed"),
+          }),
         }
-      }
-      throw new Error("Max retries exceeded");
-    },
-  });
+      );
 
-  // Update tasks state when data changes and organize hierarchically
-  useEffect(() => {
-    if (tasksData) {
-      // Organize tasks hierarchically
-      const organizedTasks = organizeTasksHierarchically(tasksData);
-      setTasks(organizedTasks);
-      
-      // Only auto-expand on very first load (when no expand state exists)
-      const tasksWithSubtasks = organizedTasks
-        .filter(task => task.subtasks && task.subtasks.length > 0)
-        .map(task => task.id);
-      
-      // Check if this is the first load (no expanded tasks yet)
-      if (tasksWithSubtasks.length > 0 && expandedTasks.size === 0) {
-        const newExpandedTasks = new Set<string>();
-        // Only auto-expand first 3 tasks to avoid overwhelming UI
-        tasksWithSubtasks.slice(0, 3).forEach(taskId => newExpandedTasks.add(taskId));
-        setExpandedTasks(newExpandedTasks);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Tasks API error:', errorData);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch tasks');
+      }
+
+      setTasks(data.data || []);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      setError(error instanceof Error ? error : new Error('Failed to fetch tasks'));
+    } finally {
+      setIsLoading(false);
     }
-  }, [tasksData]); // Note: removed expandedTasks from deps to avoid infinite loop
+  };
+
+  const handleRetry = useCallback(() => {
+    fetchTasks();
+  }, []);
+
+  useEffect(() => {
+    if (session?.access_token) {
+      fetchTasks();
+    }
+  }, [session?.access_token, filters]);
 
   // Function to organize tasks into parent-child hierarchy
   const organizeTasksHierarchically = (allTasks: Task[]): Task[] => {
@@ -286,7 +277,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
           });
 
           // Refresh the task list
-          await refetch();
+          await fetchTasks();
           break;
         } catch (error) {
           if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
@@ -355,7 +346,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
           });
 
           // Refresh the task list
-          await refetch();
+          await fetchTasks();
           break;
         } catch (error) {
           if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
@@ -419,7 +410,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
           });
 
           // Refresh the task list
-          await refetch();
+          await fetchTasks();
           break;
         } catch (error) {
           if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
@@ -483,7 +474,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
           }
 
           // Refetch tasks to get the updated list with new subtask
-          await refetch();
+          await fetchTasks();
 
           // Show success toast
           (window as any).showToast?.({
@@ -514,8 +505,6 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
       });
     }
   };
-
-
 
   const handleTaskComplete = async (taskId: string, completed: boolean) => {
     // Prevent multiple simultaneous updates to the same task
@@ -606,7 +595,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
           }
 
           // Success - refetch tasks and exit the loop
-          await refetch();
+          await fetchTasks();
           break;
         } catch (error) {
           if (error instanceof Error && error.message.includes('Auth session missing') && retryCount < maxRetries) {
@@ -922,8 +911,6 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
             )}
           </div>
 
-
-          
           <div className="flex items-center h-6">
             <Badge
               variant={
@@ -994,7 +981,7 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
     );
   };
 
-  if (isTasksLoading) {
+  if (isLoading) {
     return (
       <Card>
         <CardHeader>
@@ -1039,11 +1026,11 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
   }
 
   return (
-    <>
-      <Card>
+    <OfflineFallback onRetry={handleRetry}>
+      <Card className={props.className}>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
               Tasks Overview
               <Sparkles className="h-4 w-4 text-primary opacity-60" />
               {filteredTasks.length !== tasks?.length && (
@@ -1051,9 +1038,9 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
                   {filteredTasks.length} of {tasks?.length}
                 </Badge>
               )}
-            </span>
+            </CardTitle>
             <div className="flex items-center gap-2">
-              {tasks && tasks.length > 1 && (
+              {tasks && tasks.length > 0 && (
                 <span className="text-xs text-muted-foreground font-normal hidden sm:block">
                   Drag to reorder
                 </span>
@@ -1066,81 +1053,104 @@ export const SmartTaskOverviewWidget = React.forwardRef<{ openCreateDialog: () =
                 Add Task
               </button>
             </div>
-          </CardTitle>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search and Filter */}
-          {tasks && tasks.length > 0 && (
-            <TaskSearchFilter
-              filters={filters}
-              onFiltersChange={setFilters}
-              taskCounts={taskCounts}
-            />
-          )}
 
-          {!tasks || tasks.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-muted-foreground mb-3">
-                No tasks yet
-              </div>
-              <button
-                onClick={() => setIsCreateDialogOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium"
+        <CardContent>
+          {isLoading ? (
+            <WidgetLoading variant="list" itemCount={4} className="mt-4" />
+          ) : error ? (
+            <div className="mt-4 text-center text-muted-foreground">
+              <p>Failed to load tasks. Please try again.</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRetry}
+                className="mt-2"
               >
-                <Plus className="h-4 w-4" />
-                Create your first task
-              </button>
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-muted-foreground mb-3">
-                No tasks match your filters
-              </div>
-              <button
-                onClick={() => setFilters({ search: "", urgency: [], status: [], overdue: false })}
-                className="text-sm text-primary hover:underline"
-              >
-                Clear all filters
-              </button>
+                Retry
+              </Button>
             </div>
           ) : (
-            <div className="space-y-2">
-              {filteredTasks.map((task: Task, index: number) => 
-                <TaskItem 
-                  key={task.id} 
-                  task={task} 
-                  index={index} 
-                  level={0}
+            <>
+              {/* Search and Filter */}
+              {tasks && tasks.length > 0 && (
+                <TaskSearchFilter
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  taskCounts={{
+                    total: tasks.length,
+                    completed: completingTasks.size,
+                    high: tasks.filter(t => t.urgency === "High").length,
+                    medium: tasks.filter(t => t.urgency === "Medium").length,
+                    low: tasks.filter(t => t.urgency === "Low").length,
+                    overdue: tasks.filter(t => t.due_date && !t.completed_at && new Date(t.due_date) < new Date()).length
+                  }}
                 />
               )}
-            </div>
+
+              {!tasks || tasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-muted-foreground mb-3">
+                    No tasks yet
+                  </div>
+                  <Button
+                    onClick={() => setIsCreateDialogOpen(true)}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create your first task
+                  </Button>
+                </div>
+              ) : filteredTasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-muted-foreground mb-3">
+                    No tasks match your filters
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setFilters({ search: "", urgency: [], status: [], overdue: false })}
+                    className="text-sm"
+                  >
+                    Clear all filters
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredTasks.map((task, index) => (
+                    <TaskItem 
+                      key={task.id}
+                      task={task}
+                      index={index}
+                      level={0}
+                      parentId={task.parent_task_id || undefined}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
+
+        <TaskCreateDialog
+          open={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onTaskCreate={handleTaskCreate}
+        />
+        <TaskEditDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          task={editingTask}
+          onTaskUpdate={handleTaskUpdate}
+          onTaskDelete={handleTaskDelete}
+        />
+        <SubtaskCreateDialog
+          open={isSubtaskDialogOpen}
+          onOpenChange={setIsSubtaskDialogOpen}
+          parentTask={selectedParentTask}
+          onSubtaskCreate={handleSubtaskCreate}
+        />
       </Card>
-
-      {/* Floating Add Button - only show when there are tasks */}
-      {tasks && tasks.length > 0 && (
-        <PlusButton onClick={() => setIsCreateDialogOpen(true)} />
-      )}
-
-      {/* Task Creation Dialog */}
-      <TaskCreateDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-        onTaskCreate={handleTaskCreate}
-      />
-
-      {/* Task Edit Dialog */}
-      <TaskEditDialog
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-        task={editingTask}
-        onTaskUpdate={handleTaskUpdate}
-        onTaskDelete={handleTaskDelete}
-        onSubtaskCreate={handleSubtaskCreate}
-      />
-
-
-    </>
+    </OfflineFallback>
   );
 }); 

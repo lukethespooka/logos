@@ -6,21 +6,43 @@
 // PROVIDER INTEGRATION TYPES
 // =============================================================================
 
-export type ProviderType = 'gmail' | 'google_calendar' | 'apple_calendar';
+export type ProviderType = 
+  | 'gmail' 
+  | 'google_calendar'
+  | 'google_drive'
+  | 'google_tasks'
+  | 'google_maps'
+  | 'openweathermap'
+  | 'weatherapi'
+  | 'tomorrow_io'
+  | 'apple_calendar';
 
 export type ConnectionStatus = 'active' | 'expired' | 'revoked';
 
 export interface ProviderConnection {
   id: string;
-  user_id: string;
   provider: ProviderType;
-  access_token?: string; // Encrypted in DB
-  refresh_token?: string; // Encrypted in DB
-  expires_at?: string;
-  scopes: string[];
+  status: 'active' | 'expired' | 'revoked';
   connected_at: string;
   last_sync?: string;
-  status: ConnectionStatus;
+  scopes: string[];
+  user_email?: string;
+  display_name?: string;
+  avatar_url?: string;
+  settings: {
+    // Maps settings
+    defaultCenter?: [number, number];
+    defaultZoom?: number;
+    language?: string;
+    region?: string;
+    // Weather settings
+    units?: 'metric' | 'imperial';
+    daysForcast?: number;
+    // Other provider-specific settings
+    [key: string]: any;
+  };
+  sync_enabled: boolean;
+  sync_frequency: number;
 }
 
 export interface OAuthConfig {
@@ -33,6 +55,34 @@ export interface OAuthConfig {
     client_id: string;
     client_secret: string;
     scopes: string[];
+  };
+  google_drive: {
+    client_id: string;
+    client_secret: string;
+    scopes: string[];
+  };
+  google_tasks: {
+    client_id: string;
+    client_secret: string;
+    scopes: string[];
+  };
+  google_maps: {
+    api_key: string;
+    places_api_key: string;
+    geocoding_api_key: string;
+    scopes: string[];
+  };
+  openweathermap: {
+    api_key: string;
+    units: 'metric' | 'imperial';
+  };
+  weatherapi: {
+    api_key: string;
+    days_forecast: number;
+  };
+  tomorrow_io: {
+    api_key: string;
+    units: 'metric' | 'imperial';
   };
   apple_calendar: {
     client_id: string;
@@ -47,8 +97,15 @@ export interface OAuthConfig {
 
 export type AIProvider = 'ollama' | 'openai' | 'claude';
 
-export type LocalModel = 'mistral:7b-instruct' | 'llama3.1:8b' | 'phi3:mini' | 'codellama:7b';
-export type CloudModel = 'gpt-4o-mini' | 'gpt-4' | 'claude-3.5-sonnet';
+export type LocalModel = 
+  | 'llama3.2:1b'
+  | 'llama3.2:3b'
+  | 'all-minilm:l6-v2'
+
+export type CloudModel = 
+  | 'gpt-4o-mini'
+  | 'gpt-4'
+  | 'claude-3.5-sonnet'
 
 export type InteractionType = 'brief' | 'email_triage' | 'calendar_analysis' | 'task_generation' | 'focus_suggestion';
 
@@ -283,4 +340,84 @@ export type OptionalExcept<T, K extends keyof T> = Partial<T> & Pick<T, K>;
 
 export type CreateType<T> = Omit<T, 'id' | 'created_at' | 'updated_at'>;
 
-export type UpdateType<T> = Partial<Omit<T, 'id' | 'user_id' | 'created_at'>>; 
+export type UpdateType<T> = Partial<Omit<T, 'id' | 'user_id' | 'created_at'>>;
+
+// Weather Types
+export interface WeatherData {
+  location: {
+    lat: number;
+    lon: number;
+    name: string;
+    country: string;
+    timezone: string;
+  };
+  current: {
+    temp: number;
+    feels_like: number;
+    humidity: number;
+    wind_speed: number;
+    wind_direction: number;
+    conditions: string;
+    icon: string;
+  };
+  forecast: Array<{
+    date: string;
+    temp_min: number;
+    temp_max: number;
+    conditions: string;
+    icon: string;
+    precipitation_chance: number;
+  }>;
+  alerts?: Array<{
+    title: string;
+    description: string;
+    severity: 'info' | 'warning' | 'severe' | 'extreme';
+    start: string;
+    end: string;
+  }>;
+}
+
+// Maps Types
+export interface MapLocation {
+  lat: number;
+  lng: number;
+  address?: string;
+  name?: string;
+  place_id?: string;
+  types?: string[];
+}
+
+export interface PlaceDetails {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+  geometry: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+  types: string[];
+  rating?: number;
+  user_ratings_total?: number;
+  opening_hours?: {
+    open_now: boolean;
+    periods: Array<{
+      open: { day: number; time: string };
+      close: { day: number; time: string };
+    }>;
+  };
+  photos?: Array<{
+    photo_reference: string;
+    height: number;
+    width: number;
+  }>;
+  website?: string;
+  formatted_phone_number?: string;
+  reviews?: Array<{
+    author_name: string;
+    rating: number;
+    text: string;
+    time: number;
+  }>;
+} 

@@ -34,14 +34,31 @@ This document records the key architectural decisions made for the LogOS project
 - **Alternatives Considered:** Pure cloud approach (rejected for privacy/cost), pure local approach (rejected for creative task quality)
 
 ## Provider Integration Strategy
-- **Decision (2025-01-02):** Implement bidirectional sync with Google (Gmail, Calendar, Docs) and Apple (Calendar) with OAuth 2.0.
+- **Decision (2025-01-02):** Implement bidirectional sync with Google (Gmail, Calendar, Docs, Maps) and multiple weather providers with OAuth 2.0.
 - **Rationale:** 
   - Enables LogOS to become true productivity co-pilot with real data
   - Bidirectional capabilities allow AI to take actions on user's behalf
+  - Location and weather context enhances scheduling and planning
+  - Multiple weather providers ensure reliability and global coverage
   - Aligns with blueprint vision of unified workspace reducing context-switching
-- **Privacy Controls**: Minimal data storage, local processing for sensitive content, user-controlled permissions
-- **Phase 1**: Google integration (better APIs), Phase 2: Apple integration (more complex)
-- **Alternatives Considered:** Read-only integration (rejected for limited value), single provider support (rejected for user lock-in)
+- **Provider Selection:**
+  - **Google Services**: Gmail, Calendar, Docs, Maps (better APIs, comprehensive integration)
+  - **Weather Services**: OpenWeatherMap (primary), WeatherAPI/Tomorrow.io (fallbacks)
+  - **Apple Services**: Calendar integration (Phase 2)
+- **Privacy Controls**: 
+  - Minimal data storage
+  - Local processing for sensitive content
+  - User-controlled permissions
+  - Encrypted location data
+  - Weather queries anonymized
+- **Implementation Phases**:
+  1. Google core services (Gmail, Calendar, Docs)
+  2. Maps and primary weather provider
+  3. Additional weather providers and Apple integration
+- **Alternatives Considered:** 
+  - Read-only integration (rejected for limited value)
+  - Single provider support (rejected for user lock-in)
+  - Single weather provider (rejected for reliability concerns)
 
 ## Future Architectural Enhancements
 
